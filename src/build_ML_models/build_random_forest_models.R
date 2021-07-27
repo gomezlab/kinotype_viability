@@ -14,6 +14,8 @@ if (is.na(this_depmap_id)) {
 	this_depmap_id = "ACH-000007"
 }
 
+dir.create(here('results/rand_forest_classification_models/'), showWarnings = F)
+
 doParallel::registerDoParallel(cores=detectCores() - 2)
 
 ###############################################################################
