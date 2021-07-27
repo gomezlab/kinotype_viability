@@ -55,7 +55,7 @@ write_csv(klaeger_no_matches, here('src/find_PRISM_klaeger_matches/no_clear_matc
 write_csv(as.data.frame(PRISM_no_matches), here('src/find_PRISM_klaeger_matches/no_clear_match_PRISM_drug_list.csv'))
 ```
 
-From here I opened each individual drug list file and manually matched the drug names, producing "manual_matches.csv". 
+From here we opened each individual drug list file and manually matched the drug names, producing "manual_matches.csv". 
 
 ```{r}
 manual_matches = read_csv(here('src/find_PRISM_klaeger_matches/manual_matches.csv'))
