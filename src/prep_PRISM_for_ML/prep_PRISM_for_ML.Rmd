@@ -15,16 +15,35 @@ knitr::opts_knit$set(root.dir = here())
 ```{r}
 compound_match_list = read_csv(here('src/find_PRISM_klaeger_matches/klaeger_PRISM_match_list.csv'))
 
-PRISM_viability_results = read_csv(here('data/PRISM/secondary/secondary-screen-replicate-collapsed-logfold-change.csv'))
+klaeger_tidy = read_rds(here('results/klaeger_full_tidy.rds'))
 
-PRISM_viability_tidy = PRISM_viability_results %>% 
-	rename(cell_line = X1) %>% 
-	pivot_longer(-cell_line, values_to = "cell_viability", names_to = "full_treatment_id") %>%
-	extract(full_treatment_id, c('broad_id','concen_uM','plate_id'), regex = "(.*)::(.*)::(.*)") %>%
-	mutate(concen_uM = as.numeric(concen_uM)) 
-
-PRISM_viability_matches = PRISM_viability_tidy %>%
-	filter(broad_id %in% compound_match_list$broad_id) %>%
-	write_rds(here('results/PRISM_compound_matches_tidy.rds'), compress = 'gz')
+response_curve_parameters = read_csv(here('data/PRISM/secondary/secondary-screen-dose-response-curve-parameters.csv')) %>%
+	#Filter only to compounds that match the Klaeger list and to cell lines that
+	#passed STR profiling
+	filter(broad_id %in% compound_match_list$broad_id, passed_str_profiling)
 ```
+
+OK, so none of the concentrations used in the screening data match with the concentrations used in Klaeger. Fortunately, PRISM provides log logistic fits for all of the viability curves, so we'll use these curve fits to impute all the viability values at the Klaeger concentrations.
+
+The fitting methods used an R package named drc, which is described in this paper (https://doi.org/10.1371/journal.pone.0146021). The formula used below to impute the viability values is from the paper.
+
+```{r}
+broad_id_klaeger_conc = crossing(compound_match_list$broad_id, unique(klaeger_tidy$concentration_M))
+names(broad_id_klaeger_conc) <- c('broad_id','klaeger_conc')
+broad_id_klaeger_conc = broad_id_klaeger_conc %>%
+	filter(klaeger_conc != 0)
+
+klaeger_viability = response_curve_parameters %>%
+	left_join(broad_id_klaeger_conc) %>%
+	#These curves seem to be originally fit in uM concentrations, so we'll convert
+	#the M concentration values to uM
+	mutate(imputed_viability = lower_limit + (upper_limit - lower_limit)/(1 + exp(slope * (log(klaeger_conc*10^6) - log(ec50))))) %>%
+	select(broad_id,depmap_id,klaeger_conc,imputed_viability) %>%
+	left_join(compound_match_list %>% select(broad_id,drug)) %>%
+	group_by(depmap_id, drug, klaeger_conc) %>%
+	summarise(imputed_viability = mean(imputed_viability)) %>%
+	write_rds(here('results/PRISM_klaeger_imputed_tidy.rds'), compress = 'gz')
+```
+
+
 
