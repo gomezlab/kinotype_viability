@@ -58,7 +58,7 @@ for (exclude_compound in unique(cell_line_data$drug)) {
 cell_line_compound_splits = new_rset(
 	splits = splits,
 	ids = id,
-	attrib = paste0("Per compound cv splits for ", depmap_id),
+	attrib = paste0("Per compound cv splits for ", this_depmap_id),
 	subclass = c("vfold_cv", "rset")
 )
 
@@ -89,6 +89,6 @@ tune_grid(
 	resamples = cell_line_compound_splits,
 	grid = rand_forest_grid,
 	control = control_grid(save_pred = TRUE)
-) %>% write_rds(here('results/rand_forest_classification_models/', paste0(depmap_id,'.rds')), compress = 'gz')
+) %>% write_rds(here('results/rand_forest_classification_models/', paste0(this_depmap_id,'.rds')), compress = 'gz')
 
 toc()
