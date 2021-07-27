@@ -1,0 +1,30 @@
+---
+title: "Prep PRISM for ML"
+author: "Matthew Berginski"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+
+knitr::opts_knit$set(root.dir = here())
+```
+
+```{r}
+compound_match_list = read_csv(here('src/find_PRISM_klaeger_matches/klaeger_PRISM_match_list.csv'))
+
+PRISM_viability_results = read_csv(here('data/PRISM/secondary/secondary-screen-replicate-collapsed-logfold-change.csv'))
+
+PRISM_viability_tidy = PRISM_viability_results %>% 
+	rename(cell_line = X1) %>% 
+	pivot_longer(-cell_line, values_to = "cell_viability", names_to = "full_treatment_id") %>%
+	extract(full_treatment_id, c('broad_id','concen_uM','plate_id'), regex = "(.*)::(.*)::(.*)") %>%
+	mutate(concen_uM = as.numeric(concen_uM)) 
+
+PRISM_viability_matches = PRISM_viability_tidy %>%
+	filter(broad_id %in% compound_match_list$broad_id) %>%
+	write_rds(here('results/PRISM_compound_matches_tidy.rds'), compress = 'gz')
+```
+
