@@ -27,7 +27,7 @@ binarized_viability_CV = read_rds(here('results/single_model/klaeger_CCLE_CV_spl
 # Build Models
 ###############################################################################
 
-PRISM_klaeger_recipe = recipe(target_viability_split ~ ., full_model_data_set) %>%
+PRISM_klaeger_recipe = recipe(target_viability_split ~ ., binarized_viability_CV$splits[[1]]$data) %>%
 	update_role(-starts_with("exp_"),-starts_with("act_"),-starts_with("target_"), new_role = "id variable") %>%
 	prep()
 
