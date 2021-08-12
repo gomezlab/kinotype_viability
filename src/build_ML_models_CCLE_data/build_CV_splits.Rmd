@@ -17,27 +17,23 @@ knitr::opts_knit$set(root.dir = here())
 
 ```{r}
 tic()
-
 ###############################################################################
 # Load Data
 ###############################################################################
 
 klaeger_wide = read_rds(here('results/klaeger_full_tidy.rds')) %>%
-	pivot_wider(names_from = gene_name, values_from = relative_intensity)
+	mutate(act_gene_name = paste0("act_",gene_name)) %>%
+	select(-gene_name) %>%
+	pivot_wider(names_from = act_gene_name, values_from = relative_intensity)
 
-CCLE_expression = read_rds(here('results/expression_set_for_ML.rds'))
-# CCLE_mutation = read_rds(here('results/mutation_set_for_ML.rds'))
-
-# CCLE_full_set = CCLE_expression %>%
-# 	left_join(CCLE_mutation)
+CCLE_expression = read_rds(here('results/single_model/expression_set_for_ML.rds'))
 
 PRISM_klaeger_imputed = read_rds(here('results/PRISM_klaeger_imputed_tidy.rds'))
 
 PRISM_klaeger_CCLE = PRISM_klaeger_imputed %>%
 	left_join(klaeger_wide, by = c('drug'='drug', 'klaeger_conc' = 'concentration_M')) %>%
 	filter(depmap_id %in% CCLE_expression$DepMap_ID) %>%
-	left_join(CCLE_expression, by=c('depmap_id' = 'DepMap_ID')) %>%
-	select(-depmap_id,-drug,-klaeger_conc)
+	left_join(CCLE_expression, by=c('depmap_id' = 'DepMap_ID'))
 
 ###############################################################################
 # Prep Cross Validation Splits
@@ -46,21 +42,19 @@ PRISM_klaeger_CCLE = PRISM_klaeger_imputed %>%
 median_viability = median(PRISM_klaeger_CCLE$imputed_viability)
 
 binarized_viability = PRISM_klaeger_CCLE %>%
-	mutate(viability_split = as.factor(imputed_viability < median_viability)) %>%
-	select(-imputed_viability)
+	mutate(target_viability_split = as.factor(imputed_viability < median_viability)) %>%
+	write_rds(here('results/single_model/klaeger_CCLE_binary_full.rds'), compress = 'gz')
+toc()
 ```
 
 ```{r}
-dir.create(here('results/klaeger_CCLE_CV_splits/'))
+dir.create(here('results/single_model/klaeger_CCLE_CV_splits/'))
 fold_ids = sample(rep(1:10,length.out = dim(PRISM_klaeger_CCLE)[1]))
 
 for (i in 1:10) {
 	splits = list()
 	
-	assessment_ids = which(fold_ids == i)
-	analysis_ids = which(fold_ids != i)
-	
-	splits[[1]] = make_splits(list("analysis" = analysis_ids,"assessment" = assessment_ids),
+	splits[[1]] = make_splits(list("analysis" = which(fold_ids != i),"assessment" = which(fold_ids == i)),
 																binarized_viability)
 	
 	id = sprintf("Fold%02d",i)
@@ -70,50 +64,6 @@ for (i in 1:10) {
 		ids = id,
 		attrib = sprintf("Per compound cv splits for fold ", i),
 		subclass = c("vfold_cv", "rset")
-	)	%>% write_rds(here('results/klaeger_CCLE_CV_splits/',sprintf('%02d.rds',i)), compress = 'gz')
+	)	%>% write_rds(here('results/single_model/klaeger_CCLE_CV_splits/',sprintf('%02d.rds',i)), compress = 'gz')
 }
-```
-
-
-```{r}
-# all_row_nums = 1:dim(PRISM_klaeger_CCLE)[1]
-# left_over_row_nums = all_row_nums
-# used_row_nums = c()
-# 
-# min_cv_size = floor(dim(PRISM_klaeger_CCLE)[1]/10)
-# extra_row_count = dim(PRISM_klaeger_CCLE)[1] %% min_cv_size
-# 
-# stopifnot(dim(PRISM_klaeger_CCLE)[1] == min_cv_size*10 + extra_row_count)
-# 
-# for (i in 1:10) {
-# 	
-# 	this_cv_size = min_cv_size
-# 	if (i <= extra_row_count) {
-# 		this_cv_size = this_cv_size + 1
-# 	}
-# 	
-# 	splits = list()
-# 	index = 1
-# 	id = c()
-# 	
-# 	assessment_ids = sample(left_over_row_nums, this_cv_size)
-# 	analysis_ids = all_row_nums[! all_row_nums %in% assessment_ids]
-# 	
-# 	used_row_nums = c(used_row_nums, assessment_ids)
-# 	left_over_row_nums = left_over_row_nums[! left_over_row_nums %in% assessment_ids]
-# 	
-# 	splits[[index]] = make_splits(list("analysis" = analysis_ids,"assessment" = assessment_ids),
-# 																binarized_viability)
-# 	index = index + 1
-# 	
-# 	id = c(id,sprintf("Fold%02d",i))
-# 	
-# 	cell_line_compound_splits = new_rset(
-# 		splits = splits,
-# 		ids = id,
-# 		attrib = sprintf("Per compound cv splits for fold ", i),
-# 		subclass = c("vfold_cv", "rset")
-# 	)	%>% write_rds(here('results',sprintf('%02d.rds',i)), compress = 'gz')
-# }
-# stopifnot(length(left_over_row_nums) == 0)
 ```

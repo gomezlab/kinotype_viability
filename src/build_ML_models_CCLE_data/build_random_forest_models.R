@@ -14,17 +14,22 @@ parser$add_argument('--hyper_slice', default = 1, type="integer")
 parser$add_argument('--fold_number', default = 1, type="integer")
 
 args = parser$parse_args()
+print(sprintf('Hyper: %03d, Fold: %02d',args$hyper_slice,args$fold_number))
 
-dir.create(here('results/rand_forest_klaeger_CCLE_models/'), showWarnings = F)
+dir.create(here('results/single_model/rand_forest_param_scan/'), showWarnings = F)
 
-output_file = here('results/rand_forest_klaeger_CCLE_models/',
+output_file = here('results/single_model/rand_forest_param_scan/',
 									 sprintf('hyper%03d_fold%02d.rds',args$hyper_slice,args$fold_number))
 
-binarized_viability_CV = read_rds(here('results/klaeger_CCLE_CV_splits/',sprintf('%02d.rds',args$fold_number)))
+binarized_viability_CV = read_rds(here('results/single_model/klaeger_CCLE_CV_splits/',sprintf('%02d.rds',args$fold_number)))
 
 ###############################################################################
 # Build Models
 ###############################################################################
+
+PRISM_klaeger_recipe = recipe(target_viability_split ~ ., full_model_data_set) %>%
+	update_role(-starts_with("exp_"),-starts_with("act_"),-starts_with("target_"), new_role = "id variable") %>%
+	prep()
 
 rand_forest_spec <- rand_forest(
 	trees = tune(),
@@ -41,8 +46,8 @@ rand_forest_grid <- grid_latin_hypercube(
 ) %>% slice(args$hyper_slice)
 
 rand_forest_wf <- workflow() %>%
-	add_formula(viability_split ~ .) %>%
-	add_model(rand_forest_spec)
+	add_model(rand_forest_spec) %>%
+	add_recipe(PRISM_klaeger_recipe)
 
 model_results <- tune_grid(
 	rand_forest_wf,
