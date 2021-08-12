@@ -14,7 +14,7 @@ if (is.na(this_depmap_id)) {
 	this_depmap_id = "ACH-000007"
 }
 
-dir.create(here('results/rand_forest_classification_models/'), showWarnings = F)
+dir.create(here('results/per_cell_line_models/rand_forest_CV_results/'), showWarnings = F)
 
 doParallel::registerDoParallel(cores=detectCores() - 2)
 
@@ -23,11 +23,12 @@ doParallel::registerDoParallel(cores=detectCores() - 2)
 ###############################################################################
 
 klaeger_wide = read_rds(here('results/klaeger_full_tidy.rds')) %>%
-	pivot_wider(names_from = gene_name, values_from = relative_intensity)
+	mutate(act_gene_name = paste0("act_",gene_name)) %>%
+	select(-gene_name) %>%
+	pivot_wider(names_from = act_gene_name, values_from = relative_intensity)
 
 PRISM_klaeger_viability = read_rds(here('results/PRISM_klaeger_imputed_tidy.rds')) %>%
-	left_join(klaeger_wide, by = c('drug'='drug', 'klaeger_conc' = 'concentration_M')) %>%
-	ungroup()
+	left_join(klaeger_wide, by = c('drug'='drug', 'klaeger_conc' = 'concentration_M'))
 
 ###############################################################################
 # Prep Cross Validation Splits
@@ -39,8 +40,7 @@ cell_line_data = PRISM_klaeger_viability %>%
 median_viability = median(cell_line_data$imputed_viability)
 
 cell_line_data = cell_line_data %>%
-	mutate(viability_split = as.factor(imputed_viability < median_viability)) %>%
-	select(-depmap_id,-klaeger_conc,-imputed_viability) %>%
+	mutate(target_viability_split = as.factor(imputed_viability < median_viability)) %>%
 	ungroup()
 
 splits = list()
@@ -68,6 +68,10 @@ cell_line_compound_splits = new_rset(
 # Build Models
 ###############################################################################
 
+PRISM_klaeger_recipe = recipe(target_viability_split ~ ., cell_line_compound_splits$splits[[1]]$data) %>%
+	update_role(-starts_with("exp_"),-starts_with("act_"),-starts_with("target_"), new_role = "id variable") %>%
+	prep()
+
 rand_forest_spec <- rand_forest(
 	trees = tune(),
 	mtry = tune(),
@@ -83,14 +87,14 @@ rand_forest_grid <- grid_latin_hypercube(
 )
 
 rand_forest_wf <- workflow() %>%
-	add_formula(viability_split ~ .) %>%
-	add_model(rand_forest_spec)
+	add_model(rand_forest_spec) %>%
+	add_recipe(PRISM_klaeger_recipe)
 
 tune_grid(
 	rand_forest_wf,
 	resamples = cell_line_compound_splits,
 	grid = rand_forest_grid,
 	control = control_grid(save_pred = TRUE)
-) %>% write_rds(here('results/rand_forest_classification_models/', paste0(this_depmap_id,'.rds')), compress = 'gz')
+) %>% write_rds(here('results/per_cell_line_models/rand_forest_CV_results/', paste0(this_depmap_id,'.rds')), compress = 'gz')
 
 toc()
