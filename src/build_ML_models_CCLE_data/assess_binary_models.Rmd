@@ -25,7 +25,7 @@ process_full_roc_data <- function(all_results) {
 	for (model_id in unique(all_results$.config)) {
 		these_results = all_results %>% filter(.config == model_id)
 		
-		pred <- prediction(these_results$.pred_TRUE,these_results$viability_split)
+		pred <- prediction(these_results$.pred_TRUE,these_results$target_viability_split)
 		perf_roc <- performance(pred, measure = "auc")
 		prc_roc <- performance(pred, measure = "aucpr")
 		
@@ -42,14 +42,14 @@ process_full_roc_data <- function(all_results) {
 }
 
 get_ROC_curve_values <- function(results) {
-	pred <- prediction(results$.pred_TRUE,results$viability_split)
+	pred <- prediction(results$.pred_TRUE,results$target_viability_split)
 	perf <- performance(pred,measure = "tpr",x.measure = "fpr")
 	return(data.frame(fpr = perf@x.values[[1]],
 										tpr = perf@y.values[[1]]))
 }
 
 get_PRC_curve_values <- function(results) {
-	pred <- prediction(results$.pred_TRUE,results$viability_split)
+	pred <- prediction(results$.pred_TRUE,results$target_viability_split)
 	perf <- performance(pred,measure = "prec",x.measure = "rec")
 	return(data.frame(precision = perf@y.values[[1]],
 										recall = perf@x.values[[1]]))
