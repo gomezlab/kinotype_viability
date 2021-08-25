@@ -1,0 +1,58 @@
+---
+title: "Make CV Splits"
+author: "Matthew Berginski"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(tidymodels)
+library(tictoc)
+library(doParallel)
+
+knitr::opts_knit$set(root.dir = here())
+```
+
+```{r}
+tic()
+
+dir.create(here('results/single_model_only_klaeger_via_50'), recursive = T)
+
+klaeger_wide = read_rds(here('results/klaeger_full_tidy.rds')) %>%
+	mutate(act_gene_name = paste0("act_",gene_name)) %>%
+	select(-gene_name) %>%
+	pivot_wider(names_from = act_gene_name, values_from = relative_intensity)
+
+PRISM_klaeger_imputed = read_rds(here('results/PRISM_klaeger_imputed_tidy.rds'))
+
+PRISM_klaeger = PRISM_klaeger_imputed %>%
+	left_join(klaeger_wide, by = c('drug'='drug', 'klaeger_conc' = 'concentration_M'))
+
+binarized_viability = PRISM_klaeger %>%
+	mutate(target_viability_split = as.factor(imputed_viability < 0.5)) %>%
+	write_rds(here('results/single_model_only_klaeger_via_50/klaeger_CCLE_binary_full.rds'), compress = 'gz')
+toc()
+```
+
+```{r}
+dir.create(here('results/single_model_only_klaeger_via_50/CV_splits/'))
+fold_ids = sample(rep(1:10,length.out = dim(PRISM_klaeger)[1]))
+
+for (i in 1:10) {
+	splits = list()
+	
+	splits[[1]] = make_splits(list("analysis" = which(fold_ids != i),"assessment" = which(fold_ids == i)),
+																binarized_viability)
+	
+	id = sprintf("Fold%02d",i)
+	
+	cell_line_compound_splits = new_rset(
+		splits = splits,
+		ids = id,
+		attrib = sprintf("Per compound cv splits for fold ", i),
+		subclass = c("vfold_cv", "rset")
+	)	%>% write_rds(here('results/single_model_only_klaeger_via_50/CV_splits/',sprintf('%02d.rds',i)), compress = 'gz')
+}
+```
