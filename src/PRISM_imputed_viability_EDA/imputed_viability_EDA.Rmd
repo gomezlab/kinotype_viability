@@ -1,0 +1,126 @@
+---
+title: "PRISM Imputed Viability EDA"
+author: "Matthew Berginski"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(ggridges)
+
+knitr::opts_knit$set(root.dir = here())
+```
+
+```{r}
+imputed_via = readRDS("~/Documents/Projects/PRISM_perturbations/results/PRISM_klaeger_imputed_tidy.rds") %>%
+	ungroup()
+
+drug_via_summary = imputed_via %>%
+	group_by(drug) %>%
+	summarise(mean_via = mean(imputed_viability),
+						sd_via = sd(imputed_viability)) %>%
+	arrange(mean_via)
+
+
+
+line_via_summary = imputed_via %>%
+	group_by(depmap_id) %>%
+	summarise(mean_via = mean(imputed_viability),
+						sd_via = sd(imputed_viability)) %>%
+	arrange(mean_via)
+
+imputed_via = imputed_via %>%
+	mutate(drug = fct_relevel(drug,drug_via_summary$drug)) %>%
+	mutate(drug_sd_factor = fct_relevel(drug,drug_via_summary %>% arrange(sd_via) %>% pull(drug))) %>%
+	mutate(depmap_id = fct_relevel(depmap_id,line_via_summary$depmap_id)) %>%
+	mutate(depmap_id_sd_factor = fct_relevel(depmap_id,line_via_summary %>% arrange(sd_via) %>% pull(depmap_id))) %>%
+	identity()
+```
+
+# Global Plots
+
+```{r}
+ggplot(imputed_via, aes(x=imputed_viability)) +
+	geom_histogram() +
+	labs(x="Imputed Cell Viability", y="Number of Cell Line/Compound Combinations") +
+	BerginskiRMisc::theme_berginski()
+ggsave(here('figures/imputed_viability_EDA/full_viability_hist.png'))
+BerginskiRMisc::trimImage(here('figures/imputed_viability_EDA/full_viability_hist.png'))
+```
+
+# By Drug Plots
+
+```{r}
+ggplot(imputed_via, aes(x=drug,y=imputed_viability)) +
+	geom_boxplot(outlier.size = 0) +
+	labs(y="Imputed Viability", x='') +
+	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+	BerginskiRMisc::theme_berginski()
+ggsave(here('figures/imputed_viability_EDA/viability_by_drug_boxplot.png'), width=20)
+```
+
+```{r}
+ggplot(imputed_via, aes(x=imputed_viability,y=drug)) +
+	geom_density_ridges() +
+	labs(x="Imputed Viability", y='') +
+	BerginskiRMisc::theme_berginski()
+ggsave(here('figures/imputed_viability_EDA/viability_by_drug_ridge.png'), height=20)
+```
+
+```{r}
+ggplot(imputed_via, aes(x=imputed_viability,y=drug_sd_factor)) +
+	geom_density_ridges() +
+	labs(x="Imputed Viability", y='') +
+	BerginskiRMisc::theme_berginski()
+ggsave(here('figures/imputed_viability_EDA/viability_by_drug_ridge_sd_sort.png'), height=20)
+```
+
+```{r}
+ggplot(imputed_via %>% filter(drug == "AZD-7762" | drug == "BMS-387032"), aes(x=imputed_viability,y=drug)) +
+	geom_density_ridges() +
+	labs(x="Imputed Viability", y='') +
+	BerginskiRMisc::theme_berginski()
+ggsave(here('figures/imputed_viability_EDA/viability_by_drug_ridge_cool.png'))
+```
+
+# By Cell Line Plots
+
+```{r}
+ggplot(imputed_via, aes(x=depmap_id,y=imputed_viability)) +
+	geom_boxplot(outlier.size = 0) +
+	labs(y="Imputed Viability", x='') +
+	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+	BerginskiRMisc::theme_berginski()
+ggsave(here('figures/imputed_viability_EDA/viability_by_cell_boxplot.png'), width=40)
+```
+
+```{r}
+ggplot(imputed_via, aes(x=imputed_viability,y=depmap_id)) +
+	geom_density_ridges() +
+	labs(x="Imputed Viability", y='') +
+	BerginskiRMisc::theme_berginski()
+ggsave(here('figures/imputed_viability_EDA/viability_by_cell_ridge.png'), height=45)
+```
+
+```{r}
+ggplot(imputed_via, aes(x=imputed_viability,y=depmap_id_sd_factor)) +
+	geom_density_ridges() +
+	labs(x="Imputed Viability", y='') +
+	BerginskiRMisc::theme_berginski()
+ggsave(here('figures/imputed_viability_EDA/viability_by_cell_ridge_sd_factor.png'), height=45)
+```
+
+```{r}
+high_sd_lines = line_via_summary %>% arrange(desc(sd_via)) %>% slice(1:5) %>% pull(depmap_id)
+
+high_sd_imputed_via = imputed_via %>%
+	filter(depmap_id %in% high_sd_lines)
+
+ggplot(high_sd_imputed_via, aes(x=imputed_viability,y=depmap_id_sd_factor)) +
+	geom_density_ridges() +
+	labs(x="Imputed Viability", y='') +
+	BerginskiRMisc::theme_berginski()
+ggsave(here('figures/imputed_viability_EDA/viability_by_cell_ridge_high_sd.png'))
+```
