@@ -14,7 +14,7 @@ knitr::opts_knit$set(root.dir = here())
 ```
 
 ```{r}
-prediction_results = read_rds(here('results/single_model/final_prediction_results.rds')) %>%
+prediction_results = read_rds(here('results/single_model_via_50/final_prediction_results.rds')) %>%
 	ungroup()
 
 sample_info = read_csv(here('data/CCLE_data/sample_info.csv.gz'))
@@ -53,7 +53,7 @@ get_interesting_pred_plots <- function(this_cell_line_name) {
 		geom_line() + 
 		ylim(c(0,1)) +
 		labs(x="Log 10 Compound Concentration (M)", 
-				 y="Predicted Probability of\nViability Below Median",
+				 y="Predicted Probability of\nViability Below 50%",
 				 color='',
 				 title = paste0(this_cell_line_name, " High Effect")) +
 		BerginskiRMisc::theme_berginski() + theme(legend.position="bottom")
@@ -67,7 +67,7 @@ get_interesting_pred_plots <- function(this_cell_line_name) {
 		geom_line() + 
 		ylim(c(0,1)) +
 		labs(x="Log 10 Compound Concentration (M)", 
-				 y="Predicted Probability of\nViability Below Median",
+				 y="Predicted Probability of\nViability Below 50%",
 				 color='',
 				 title = paste0(this_cell_line_name, " Low Effect")) +
 		BerginskiRMisc::theme_berginski() + theme(legend.position="bottom")
@@ -84,7 +84,7 @@ get_interesting_pred_plots <- function(this_cell_line_name) {
 		geom_line() + 
 		ylim(c(0,1)) +
 		labs(x="Log 10 Compound Concentration (M)", 
-				 y="Predicted Probability of\nViability Below Median",
+				 y="Predicted Probability of\nViability Below 50%",
 				 color='',
 				 title = paste0(this_cell_line_name, " High Range")) +
 		BerginskiRMisc::theme_berginski() + theme(legend.position="bottom")
@@ -93,9 +93,11 @@ get_interesting_pred_plots <- function(this_cell_line_name) {
 	all_plots = high_eff_plot + low_eff_plot + high_range_plot
 }
 
+dir.create(here('figures/single_model_via_50/avail_lines_predictions/'), recursive = T, showWarnings = F)
+
 for (this_line in unique(avail_prediction_results$cell_line_name)) {
 	this_plot = get_interesting_pred_plots(this_line)
-	ggsave(here('figures/single_model/avail_lines_predictions/',paste0(this_line,".png")), this_plot, width=15,height=5)
+	ggsave(here('figures/single_model_via_50/avail_lines_predictions/',paste0(this_line,".png")), this_plot, width=15,height=5)
 }
 ```
 
@@ -116,66 +118,11 @@ ggplot(line_diff_pred, aes(x=log10(concentration_M), y=mean_pred,color=cell_line
 		geom_line() + 
 		ylim(c(0,1)) +
 		labs(x="Log 10 Compound Concentration (M)", 
-				 y="Predicted Probability of\nViability Below 90%",
+				 y="Predicted Probability of\nViability Below 50%",
 				 color='') +
 		BerginskiRMisc::theme_berginski() +
 	facet_wrap(~drug)
-ggsave(here('figures/single_model/avail_lines_predictions/SK-BR_vs_SUM159.png'))
-```
-
-
-```{r}
-deadly_pred_set = mda_predictions %>%
-	mutate(drug = fct_relevel(drug,as.character(mda_summary$drug))) %>%
-	filter(drug %in% mda_summary$drug[1:5])
-
-ggplot(deadly_pred_set, aes(x=log10(concentration_M), y=mean_pred,color=drug)) +
-	geom_point() +
-	geom_line() + 
-	ylim(c(0,1)) +
-	labs(x="Log 10 Compound Concentration (M)", 
-			 y="Predicted Probability of\nViability Below 90%",
-			 color='') +
-	BerginskiRMisc::theme_berginski()
-
-ggsave(here('figures/mda_predictions_high_effect.png'),width=5,height=3)
-```
-
-```{r}
-low_eff_set = mda_predictions %>%
-	mutate(drug = fct_relevel(drug,as.character(mda_summary$drug))) %>%
-	filter(drug %in% rev(mda_summary$drug)[1:5])
-
-ggplot(low_eff_set, aes(x=log10(concentration_M), y=mean_pred,color=drug)) +
-	geom_point() +
-	geom_line() + 
-	ylim(c(0,1)) +
-	labs(x="Log 10 Compound Concentration (M)", 
-			 y="Predicted Probability of\nViability Below 90%",
-			 color='') +
-	BerginskiRMisc::theme_berginski()
-
-ggsave(here('figures/mda_predictions_low_effect.png'),width=5,height=3)
-```
-
-```{r}
-range_sort = mda_summary %>%
-	arrange(desc(pred_range))
-
-range_pred_set = mda_predictions %>%
-	mutate(drug = fct_relevel(drug,as.character(range_sort$drug))) %>%
-	filter(drug %in% range_sort$drug[1:5])
-
-ggplot(range_pred_set, aes(x=log10(concentration_M), y=mean_pred,color=drug)) +
-	geom_point() +
-	geom_line() + 
-	ylim(c(0,1)) +
-	labs(x="Log 10 Compound Concentration (M)", 
-			 y="Predicted Probability of\nViability Below 90%",
-			 color='') +
-	BerginskiRMisc::theme_berginski()
-
-ggsave(here('figures/mda_predictions_highest_range.png'),width=5,height=3)
+ggsave(here('figures/single_model_via_50/avail_lines_predictions/SK-BR_vs_SUM159.png'))
 ```
 
 # Cell Line Summaries
