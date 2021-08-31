@@ -42,7 +42,7 @@ rand_forest_grid <- grid_latin_hypercube(
 	trees(c(1000,5000)),
 	min_n(),
 	finalize(mtry(),regression_CV),
-	size = 100
+	size = 10
 ) %>% slice(args$hyper_slice)
 
 rand_forest_wf <- workflow() %>%
