@@ -6,7 +6,7 @@ missing = 0
 for (hyper_num in seq(1,10)) {
 	for (fold_num in 1:10) {
 		target_file = sprintf('hyper%03d_fold%02d.rds',hyper_num,fold_num)
-		if (file.exists(here('results/single_model/rand_forest_param_scan/',target_file))) {
+		if (file.exists(here('results/single_model_only_klaeger_via_50/rand_forest_param_scan/',target_file))) {
 			next
 		} else {
 			missing = missing + 1
