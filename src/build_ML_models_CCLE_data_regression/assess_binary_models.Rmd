@@ -12,6 +12,7 @@ library(tidymodels)
 library(ROCR)
 library(patchwork)
 library(tictoc)
+library(broom)
 
 knitr::opts_knit$set(root.dir = here())
 ```
@@ -60,38 +61,30 @@ get_PRC_curve_values <- function(results) {
 
 ```{r}
 tic()
-if (file.exists(here('results/single_model_via_50/hyper_param_results.csv'))) {
-	model_roc_prc = read_csv(here('results/single_model_via_50/hyper_param_results.csv'))
-} else {
-	model_roc_prc = data.frame()
+model_results = data.frame()
+
+for (hyper in 1:10) {
+	model_files = Sys.glob(here('results/single_model_regression/rand_forest_param_scan/',sprintf('hyper%03d*.rds', hyper)))
 	
-	for (hyper in 1:10) {
-		model_files = Sys.glob(here('results/single_model_via_50/rand_forest_param_scan/',sprintf('hyper%03d*.rds', hyper)))
-		
-		hyper_set_predictions = data.frame()
-		for (this_file in model_files) {
-			hyper_set_predictions = bind_rows(
-				hyper_set_predictions,
-				read_rds(this_file) %>% 
-					collect_predictions() 
-			)
-		}
-		
-		model_roc_prc = bind_rows(
-			model_roc_prc,
-			process_full_roc_data(hyper_set_predictions) %>% mutate(hyper_set = hyper)
+	hyper_set_predictions = data.frame()
+	for (this_file in model_files) {
+		hyper_set_predictions = bind_rows(
+			hyper_set_predictions,
+			read_rds(this_file) %>% 
+				collect_predictions() 
 		)
-		if (hyper %% 10 == 0) {
-			print(sprintf('Done with %d\n',hyper))
-		}
 	}
 	
-	model_roc_prc = model_roc_prc %>% 
-		mutate(prc_rank = min_rank(desc(prc)), 
-					 roc_rank = min_rank(desc(roc)))
+	model_results = bind_rows(
+		model_results,
+		data.frame(hyper_set = hyper,
+							 rmse = sqrt(mean((hyper_set_predictions$.pred - hyper_set_predictions$target_imputed_viabiity)^2)),
+							 r2 = glance(summary(lm(hyper_set_predictions$.pred ~ hyper_set_predictions$target_imputed_viabiity)))$r.squared)
+	)
 	
-	write_csv(model_roc_prc,here('results/single_model_via_50/hyper_param_results.csv'))
+	print(paste0("Done with ",hyper))
 }
+
 toc()
 ```
 
@@ -108,7 +101,7 @@ for (this_file in model_files) {
 	
 	best_predictions = bind_rows(
 		best_predictions,
-		 model_results %>%
+		model_results %>%
 			collect_predictions() %>%
 			mutate(imputed_viability = imputed_via)
 	)
