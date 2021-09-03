@@ -1,0 +1,220 @@
+---
+title: "Make CV Splits"
+author: "Matthew Berginski"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(tidymodels)
+library(tictoc)
+library(doParallel)
+
+knitr::opts_knit$set(root.dir = here())
+```
+
+```{r}
+dir.create(here('results/single_model_all_data_via50'), recursive = T)
+
+klaeger_wide = read_rds(here('results/klaeger_full_tidy.rds')) %>%
+	mutate(act_gene_name = paste0("act_",gene_name)) %>%
+	select(-gene_name) %>%
+	pivot_wider(names_from = act_gene_name, values_from = relative_intensity)
+
+PRISM_klaeger_imputed = read_rds(here('results/PRISM_klaeger_imputed_tidy.rds'))
+
+depmap_data = read_rds(here('results/single_model/full_depmap_for_ML.rds'))
+
+CCLE_data = read_rds(here('results/single_model/full_CCLE_expression_set_for_ML.rds'))
+
+PRISM_klaeger_imputed = PRISM_klaeger_imputed %>%
+	filter(depmap_id %in% depmap_data$DepMap_ID) %>%
+	filter(depmap_id %in% CCLE_data$DepMap_ID) %>%
+	ungroup()
+```
+```{r}
+
+find_feature_correlations <- function(row_indexes = NA) {
+	if (is.na(row_indexes)) {
+		row_indexes = 1:dim(PRISM_klaeger_imputed)[1]
+	}
+	
+	PRISM_klaeger_cor = PRISM_klaeger_imputed %>%
+		slice(row_indexes) %>%
+		left_join(klaeger_wide, by = c('drug'='drug', 'klaeger_conc' = 'concentration_M')) %>%
+		select(-depmap_id,-drug,-klaeger_conc) %>%
+		# correlate() %>%
+		identity()
+	
+	activation_cor = cor(PRISM_klaeger_cor %>% pull(imputed_viability), PRISM_klaeger_cor %>% select(-imputed_viability)) %>%
+		as.data.frame() %>%
+		pivot_longer(everything(), names_to = "feature",values_to = "cor")
+	
+	rm(PRISM_klaeger_cor)
+	gc()
+	
+	depmap_cor = data.frame()
+	
+	depmap_var_split = split(names(depmap_data),c(1:10))
+	
+	for (i in 1:10) {
+		PRISM_depmap_cor = PRISM_klaeger_imputed %>%
+			slice(row_indexes) %>%
+			left_join(depmap_data %>%
+									select(c(depmap_var_split[[i]],"DepMap_ID")),
+								by=c('depmap_id' = 'DepMap_ID')) %>%
+			select(-depmap_id,-drug,-klaeger_conc) %>%
+			identity()
+		
+		this_depmap_cor = cor(PRISM_depmap_cor %>% pull(imputed_viability), PRISM_depmap_cor %>% select(-imputed_viability)) %>%
+			as.data.frame() %>%
+			pivot_longer(everything(), names_to = "feature", values_to = "cor")
+		
+		depmap_cor = bind_rows(
+			depmap_cor,
+			this_depmap_cor
+		)
+		
+		rm(PRISM_depmap_cor)
+		gc()
+		
+	}
+	
+	CCLE_cor = data.frame()
+	
+	CCLE_var_split = split(names(CCLE_data),c(1:10))
+	
+	for (i in 1:10) {
+		PRISM_CCLE_cor = PRISM_klaeger_imputed %>%
+			slice(row_indexes) %>%
+			left_join(CCLE_data %>%
+									select(c(CCLE_var_split[[i]],"DepMap_ID")),
+								by=c('depmap_id' = 'DepMap_ID')) %>%
+			select(-depmap_id,-drug,-klaeger_conc) %>%
+			identity()
+		
+		this_CCLE_cor = cor(PRISM_CCLE_cor %>% pull(imputed_viability), PRISM_CCLE_cor %>% select(-imputed_viability)) %>%
+			as.data.frame() %>%
+			pivot_longer(everything(), names_to = "feature", values_to = "cor")
+		
+		CCLE_cor = bind_rows(
+			CCLE_cor,
+			this_CCLE_cor
+		)
+		
+		rm(PRISM_CCLE_cor)
+		gc()
+		
+	}
+	
+	all_cor = bind_rows(activation_cor, depmap_cor, CCLE_cor) %>% 
+		mutate(abs_cor = abs(cor)) %>% 
+		arrange(desc(abs_cor)) %>% 
+		mutate(rank = 1:n()) %>%
+		mutate(feature_type = case_when(
+			str_detect(feature, "^act_") ~ "Activation",
+			str_detect(feature, "^exp_") ~ "Expression",
+			str_detect(feature, "^dep_") ~ "Depmap",
+			T ~ feature
+		))
+	
+	return(all_cor)
+}
+
+# tic()
+# all_cor = find_feature_correlations()
+# toc()
+```
+
+```{r}
+# per_group_rank = all_cor %>%
+# 	group_by(feature_type) %>%
+# 	nest() %>%
+# 	mutate(group_rank = map(data, ~ .x %>% mutate(sub_rank = percent_rank(abs_cor*-1)))) %>%
+# 	unnest() %>%
+# 	ungroup() %>%
+# 	select(feature,sub_rank)
+# 
+# all_cor = all_cor %>%
+# 	left_join(per_group_rank)
+```
+
+```{r}
+build_binarized_viability_set <- function(feature_cor, num_features, binary_threshold) {
+	
+	activation_set = klaeger_wide %>% 
+		select(any_of(these_feature_cor$feature[1:num_features]),'drug','concentration_M')
+	
+	CCLE_set = CCLE_data %>%
+		select(any_of(these_feature_cor$feature[1:num_features]),'DepMap_ID')
+	
+	depmap_set = depmap_data %>%
+		select(any_of(these_feature_cor$feature[1:num_features]),'DepMap_ID')
+					 
+	binarized_viability = PRISM_klaeger_imputed %>%
+		left_join(activation_set, by = c('drug'='drug', 'klaeger_conc' = 'concentration_M')) %>%
+		left_join(CCLE_set, by=c('depmap_id' = 'DepMap_ID')) %>%
+		left_join(depmap_set, by=c('depmap_id' = 'DepMap_ID')) %>%
+		mutate(target_viability_split = as.factor(imputed_viability < binary_threshold))
+	
+	return(binarized_viability)
+}
+```
+
+```{r}
+dir.create(here('results/single_model_all_data_via50/CV_splits_500feat/'))
+dir.create(here('results/single_model_all_data_via50/CV_splits_1000feat/'))
+dir.create(here('results/single_model_all_data_via50/CV_splits_1500feat/'))
+fold_ids = sample(rep(1:10,length.out = dim(PRISM_klaeger_imputed)[1]))
+
+tic()
+for (i in 1:10) {
+	splits = list()
+	
+	these_feature_cor = find_feature_correlations(row_indexes = which(fold_ids != i))
+	
+	#500 Features
+	splits[[1]] = make_splits(list("analysis" = which(fold_ids != i),"assessment" = which(fold_ids == i)),
+														build_binarized_viability_set(these_feature_cor,500,0.5))
+
+	id = sprintf("Fold%02d",i)
+
+	cell_line_compound_splits = new_rset(
+		splits = splits,
+		ids = id,
+		attrib = sprintf("Per compound cv splits for fold ", i),
+		subclass = c("vfold_cv", "rset")
+	)	%>% write_rds(here('results/single_model_all_data_via50/CV_splits_500feat/',sprintf('%02d.rds',i)), compress = 'gz')
+	
+	#1000 Features
+	splits[[1]] = make_splits(list("analysis" = which(fold_ids != i),"assessment" = which(fold_ids == i)),
+														build_binarized_viability_set(these_feature_cor,1000,0.5))
+
+	id = sprintf("Fold%02d",i)
+
+	cell_line_compound_splits = new_rset(
+		splits = splits,
+		ids = id,
+		attrib = sprintf("Per compound cv splits for fold ", i),
+		subclass = c("vfold_cv", "rset")
+	)	%>% write_rds(here('results/single_model_all_data_via50/CV_splits_1000feat/',sprintf('%02d.rds',i)), compress = 'gz')
+	
+	#1500 Features
+	splits[[1]] = make_splits(list("analysis" = which(fold_ids != i),"assessment" = which(fold_ids == i)),
+														build_binarized_viability_set(these_feature_cor,1500,0.5))
+
+	id = sprintf("Fold%02d",i)
+
+	cell_line_compound_splits = new_rset(
+		splits = splits,
+		ids = id,
+		attrib = sprintf("Per compound cv splits for fold ", i),
+		subclass = c("vfold_cv", "rset")
+	)	%>% write_rds(here('results/single_model_all_data_via50/CV_splits_1500feat/',sprintf('%02d.rds',i)), compress = 'gz')
+	
+	print(paste0("Done with split: ",i))
+}
+toc()
+```
