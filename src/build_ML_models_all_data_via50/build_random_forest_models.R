@@ -10,7 +10,7 @@ library(argparse)
 tic()
 
 parser <- ArgumentParser(description='Process input paramters')
-parser$add_argument('--feature_num', type="integer", required = T)
+parser$add_argument('--feature_num', default = 200, type="integer")
 parser$add_argument('--hyper_slice', default = 1, type="integer")
 parser$add_argument('--fold_number', default = 1, type="integer")
 
@@ -29,6 +29,10 @@ binarized_viability_CV = read_rds(here('results/single_model_all_data_via50',
 																			 sprintf('CV_splits_%dfeat/',args$feature_num),
 																			 sprintf('%02d.rds',args$fold_number)))
 
+rand_forest_grid = read_rds(here('results/single_model_all_data_via50/hyper_param_search_space.rds')) %>% 
+														slice(args$hyper_slice)
+print(rand_forest_grid)
+
 ###############################################################################
 # Build Models
 ###############################################################################
@@ -43,13 +47,6 @@ rand_forest_spec <- rand_forest(
 	min_n = tune()
 ) %>% set_engine("ranger") %>%
 	set_mode("classification")
-
-rand_forest_grid <- grid_latin_hypercube(
-	trees(c(1000,5000)),
-	min_n(),
-	finalize(mtry(),binarized_viability_CV),
-	size = 10
-) %>% slice(args$hyper_slice)
 
 rand_forest_wf <- workflow() %>%
 	add_model(rand_forest_spec) %>%
