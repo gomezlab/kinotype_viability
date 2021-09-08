@@ -38,7 +38,10 @@ print(rand_forest_grid)
 ###############################################################################
 
 PRISM_klaeger_recipe = recipe(target_viability_split ~ ., binarized_viability_CV$splits[[1]]$data) %>%
-	update_role(-starts_with("exp_"),-starts_with("act_"),-starts_with("target_"), new_role = "id variable") %>%
+	update_role(-starts_with("act_"),
+							-starts_with("exp_"),
+							-starts_with("dep_"),
+							-starts_with("target_"), new_role = "id variable") %>%
 	prep()
 
 rand_forest_spec <- rand_forest(
