@@ -1,0 +1,102 @@
+---
+title: "Prep Depmap Data for ML"
+author: "Matthew Berginski"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(vroom)
+library(tictoc)
+library(tidymodels)
+library(patchwork)
+
+knitr::opts_knit$set(root.dir = here())
+# Sys.setenv("VROOM_CONNECTION_SIZE" = 131072 * 10)
+```
+
+# Loading Depmap Data Sets
+
+```{r}
+depmap_data = read_rds(here('data/depmap_data/full_depmap_tidy.rds'))
+
+ccle_sample = vroom(here('data/CCLE_data/sample_info.csv.gz'))
+
+PRISM_klaeger_set = read_rds(here('results/PRISM_klaeger_imputed_tidy.rds'))
+```
+
+```{r}
+PRISM_depmap_ids = unique(PRISM_klaeger_set$depmap_id)
+
+#I'm going to build a quick data frame here and then run a set of filters to get
+#a list of all the depmap IDs that are in all the data collections. Then I'll
+#use that full shared list of depmap_ids to filter everything else.
+shared_depmap_ids = data.frame(shared_depmap_ids = PRISM_depmap_ids) %>%
+	filter(shared_depmap_ids %in% unique(depmap_data$DepMap_ID)) %>%
+	pull(shared_depmap_ids)
+
+depmap_data_filt = depmap_data %>%
+	filter(as.character(DepMap_ID) %in% shared_depmap_ids)
+
+#It looks like several of the DepMap Lines that are also covered by PRISM have
+#some genes where the depmap_score is marked at NA. Only a few lines have this
+#problem, so I'm just going to filter them out of the downstream processing.
+depmap_missing_lines_data = depmap_data_filt %>% 
+	group_by(DepMap_ID) %>% 
+	summarise(na_count = sum(is.na(depmap_score))) %>% 
+	filter(na_count > 0)
+
+#Also adding a quick check here for the filtered lines staying at 4, just in
+#case I need to run this again.
+stopifnot(dim(depmap_missing_lines_data)[1] == 4)
+
+
+depmap_data_filt = depmap_data_filt %>%
+	filter(! DepMap_ID %in% depmap_missing_lines_data$DepMap_ID)
+
+ccle_sample = ccle_sample %>%
+	filter(DepMap_ID %in% shared_depmap_ids)
+```
+
+# Model Feature Selection Parameters
+
+```{r}
+number_cell_lines = length(unique(depmap_data_filt$DepMap_ID))
+
+total_genes_from_depmap = 500
+```
+
+# Organizing CCLE Mutation Data
+
+To select genes to include from Depmap for the set of cell lines, I'll go searching for genes with high standard deviation in score. I don't think any other normalization is necessary before grabbing the top 500 genes on the basis of standard deviation.
+
+```{r}
+depmap_summary = depmap_data_filt %>%
+	group_by(hgnc_symbol) %>%
+	summarise(depmap_mean = mean(depmap_score, na.rm = T), 
+						depmap_sd = sd(depmap_score, na.rm = T),
+						na_count = sum(is.na(depmap_score))) %>%
+	arrange(desc(depmap_sd)) %>%
+	mutate(rank = 1:n())
+
+#OK, there are a few genes that are missing from certain
+
+depmap_model_set = depmap_data_filt %>%
+	filter(hgnc_symbol %in% depmap_summary$hgnc_symbol[1:total_genes_from_depmap])
+```
+
+# Prepping Data for ML
+
+```{r}
+depmap_model_set %>% 
+	select(-NCBI_ID) %>%
+	pivot_wider(names_from = hgnc_symbol, values_from = depmap_score, names_prefix = "dep_") %>%
+	write_rds(here('results/single_model/depmap_set_for_ML.rds'), compress = 'gz')
+
+depmap_data_filt %>% 
+	select(-NCBI_ID) %>%
+	pivot_wider(names_from = hgnc_symbol, values_from = depmap_score, names_prefix = "dep_") %>%
+	write_rds(here('results/single_model/full_depmap_for_ML.rds'), compress = 'gz')
+```
