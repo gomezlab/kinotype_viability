@@ -1,0 +1,176 @@
+---
+title: "Make CV Splits"
+author: "Matthew Berginski"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(tidymodels)
+library(tictoc)
+library(doParallel)
+
+knitr::opts_knit$set(root.dir = here())
+```
+
+```{r}
+dir.create(here('results/LINCS_IC50_binary_model'), recursive = T)
+
+PRISM_LINCS_IC50 = read_csv(here('data/LINCS/LINCS_PRISM_Kd_ic50_matrix.csv')) %>%
+	pivot_longer(-c(broad_id,depmap_id,ic50,name),names_to = "gene_name",values_to = "Kd") %>%
+	mutate(KS_gene_name = paste0("ks_",gene_name)) %>%
+	select(-gene_name) %>%
+	pivot_wider(names_from = KS_gene_name, values_from = Kd)
+
+depmap_data = read_rds(here('results/single_model/full_depmap_for_ML.rds'))
+
+CCLE_data = read_rds(here('results/single_model/full_CCLE_expression_set_for_ML.rds'))
+
+PRISM_LINCS_IC50_all = PRISM_LINCS_IC50 %>%
+	filter(depmap_id %in% depmap_data$DepMap_ID) %>%
+	filter(depmap_id %in% CCLE_data$DepMap_ID) %>%
+	left_join(depmap_data, by=c('depmap_id'='DepMap_ID')) %>%
+	left_join(CCLE_data, by=c('depmap_id'='DepMap_ID'))
+```
+
+```{r}
+all_cor = cor(
+	PRISM_LINCS_IC50_all %>% 
+		select(ic50, starts_with("dep_"), starts_with("act_")) %>%
+		pull(ic50),
+	PRISM_LINCS_IC50_all %>% 
+		select(ic50, starts_with("dep_"), starts_with("act_")) %>%
+		select(-ic50)
+) %>% as.data.frame() %>%
+	pivot_longer(everything(), names_to = "feature",values_to = "cor") %>%
+	mutate(abs_cor = abs(cor)) %>%
+	arrange(desc(abs_cor)) %>%
+	mutate(rank = 1:n()) %>%
+	mutate(feature_type = case_when(
+		str_detect(feature, "^ks_") ~ "KinomeScan",
+		str_detect(feature, "^exp_") ~ "Expression",
+		str_detect(feature, "^dep_") ~ "Depmap",
+		T ~ feature
+	))
+
+```
+
+```{r}
+find_feature_correlations <- function(row_indexes = NA) {
+	if (is.na(row_indexes)) {
+		row_indexes = 1:dim(PRISM_LINCS_IC50_all)[1]
+	}
+	
+	all_cor = cor(
+		PRISM_LINCS_IC50_all %>% 
+			slice(row_indexes) %>%
+			select(ic50, starts_with("dep_"), starts_with("exp_")) %>%
+			pull(ic50),
+		PRISM_LINCS_IC50_all %>%
+			slice(row_indexes) %>%
+			select(ic50, starts_with("dep_"), starts_with("exp_")) %>%
+			select(-ic50)
+	) %>% as.data.frame() %>%
+		pivot_longer(everything(), names_to = "feature",values_to = "cor") %>%
+		mutate(abs_cor = abs(cor)) %>%
+		arrange(desc(abs_cor)) %>%
+		mutate(rank = 1:n()) %>%
+		mutate(feature_type = case_when(
+			str_detect(feature, "^ks_") ~ "KinomeScan",
+			str_detect(feature, "^exp_") ~ "Expression",
+			str_detect(feature, "^dep_") ~ "Depmap",
+			T ~ feature
+		))
+	
+	return(all_cor)
+}
+
+
+```
+
+```{r}
+tic()
+all_cor = find_feature_correlations()
+toc()
+
+per_group_rank = all_cor %>%
+	group_by(feature_type) %>%
+	nest() %>%
+	mutate(group_rank = map(data, ~ .x %>% mutate(sub_rank = percent_rank(abs_cor*-1)))) %>%
+	unnest() %>%
+	ungroup() %>%
+	select(feature,sub_rank)
+
+all_cor = all_cor %>%
+	left_join(per_group_rank)
+```
+
+```{r}
+ggplot(all_cor, aes(x=abs_cor)) +
+	geom_histogram() +
+	facet_wrap(~feature_type,scales = "free_y")
+```
+
+```{r}
+ggplot(all_cor, aes(x=rank,y=sub_rank,color=feature_type)) +
+	geom_line()
+```
+
+```{r}
+build_binarized_viability_set <- function(feature_cor, num_features, binary_threshold) {
+	binarized_viability = PRISM_LINCS_IC50_all %>%
+		select(ic50,starts_with("ks_"),any_of(feature_cor$feature[1:num_features])) %>%
+		mutate(target_ic50_split = as.factor(ic50 < binary_threshold))
+	
+	return(binarized_viability)
+}
+
+build_binarized_viability_set(all_cor,500,1)
+```
+
+```{r}
+if (file.exists(here('results/LINCS_IC50_binary_model/CV_split_row_nums.rds'))) {
+	fold_ids = read_rds(here('results/LINCS_IC50_binary_model/CV_split_row_nums.rds'))
+} else {
+	fold_ids = sample(rep(1:10,length.out = dim(PRISM_LINCS_IC50_all)[1]))
+	write_rds(fold_ids, here('results/LINCS_IC50_binary_model/CV_split_row_nums.rds'))
+}
+
+rand_forest_grid <- grid_regular(
+	trees(c(1000,5000)),
+	min_n(),
+	levels = c(3,3)
+) %>% write_rds(here('results/LINCS_IC50_binary_model/hyper_param_search_space.rds'))
+```
+
+```{r}
+tic()
+for (i in 1:10) {
+	splits = list()
+	
+	these_feature_cor = find_feature_correlations(row_indexes = which(fold_ids != i))
+	
+	for (feature_num in c(500)) {
+		target_dir = here('results/LINCS_IC50_binary_model/',sprintf('CV_splits_%sfeat',feature_num))
+		dir.create(target_dir,recursive = T)
+		
+		splits[[1]] = make_splits(list("analysis" = which(fold_ids != i),"assessment" = which(fold_ids == i)),
+															build_binarized_viability_set(these_feature_cor,feature_num,0.5))
+		
+		id = sprintf("Fold%02d",i)
+		
+		cross_validation_set = new_rset(
+			splits = splits,
+			ids = id,
+			attrib = sprintf("Per compound cv splits for fold ", i),
+			subclass = c("vfold_cv", "rset")
+		)	%>% write_rds(here(target_dir,sprintf('%02d.rds',i)), compress = 'gz')
+		
+	}
+	
+	print(paste0("Done with split: ",i))
+}
+toc()
+```
