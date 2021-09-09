@@ -33,7 +33,7 @@ binarized_viability_CV = read_rds(here('results/LINCS_IC50_binary_model',
 # Build Models
 ###############################################################################
 
-PRISM_klaeger_recipe = recipe(target_viability_split ~ ., binarized_viability_CV$splits[[1]]$data) %>%
+PRISM_klaeger_recipe = recipe(target_ic50_split ~ ., binarized_viability_CV$splits[[1]]$data) %>%
 	update_role(-starts_with("act_"),
 							-starts_with("ks_"),
 							-starts_with("exp_"),
