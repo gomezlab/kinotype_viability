@@ -60,13 +60,13 @@ get_PRC_curve_values <- function(results) {
 
 ```{r}
 tic()
-if (file.exists(here('results/single_model/hyper_param_results.csv'))) {
-	model_roc_prc = read_csv(here('results/single_model/hyper_param_results.csv'))
+if (file.exists(here('results/single_model_via_50/hyper_param_results.csv'))) {
+	model_roc_prc = read_csv(here('results/single_model_via_50/hyper_param_results.csv'))
 } else {
 	model_roc_prc = data.frame()
 	
-	for (hyper in 1:100) {
-		model_files = Sys.glob(here('results/single_model/rand_forest_param_scan/',sprintf('hyper%03d*.rds', hyper)))
+	for (hyper in 1:1) {
+		model_files = Sys.glob(here('results/single_model_via_50/rand_forest_param_scan/',sprintf('hyper%03d*.rds', hyper)))
 		
 		hyper_set_predictions = data.frame()
 		for (this_file in model_files) {
@@ -90,7 +90,7 @@ if (file.exists(here('results/single_model/hyper_param_results.csv'))) {
 		mutate(prc_rank = min_rank(desc(prc)), 
 					 roc_rank = min_rank(desc(roc)))
 	
-	write_csv(model_roc_prc,here('results/single_model/hyper_param_results.csv'))
+	write_csv(model_roc_prc,here('results/single_model_via_50/hyper_param_results.csv'))
 }
 toc()
 ```
@@ -98,7 +98,7 @@ toc()
 ```{r}
 best_model_results = model_roc_prc %>% filter(roc_rank == 1)
 
-model_files = Sys.glob(here('results/single_model/rand_forest_param_scan/',sprintf('hyper%03d*.rds', best_model_results$hyper_set)))
+model_files = Sys.glob(here('results/single_model_via_50/rand_forest_param_scan/',sprintf('hyper%03d*.rds', best_model_results$hyper_set)))
 
 best_predictions = data.frame()
 for (this_file in model_files) {
@@ -131,13 +131,13 @@ ROC_plots = ggplot(best_ROC, aes(x=fpr, y=tpr)) +
 	BerginskiRMisc::theme_berginski()
 
 PRC_plots = ggplot(best_PRC, aes(x=recall, y=precision)) + 
-	geom_abline(intercept = 0.5,slope = 0, alpha=0.5,linetype=2) +
+	geom_abline(intercept = mean(as.logical(best_predictions$target_viability_split)),slope = 0, alpha=0.5,linetype=2) +
 	geom_line() + 
 	labs(x="Recall",y="Precision", title = best_model_results$prc) +
 	BerginskiRMisc::theme_berginski()
 
 model_assess_plots = ROC_plots + PRC_plots
-dir.create(here('figures/single_model/'), recursive = T, showWarnings = F)
-ggsave(here('figures/single_model/roc_prc.png'), width=5,height=2.5)
-BerginskiRMisc::trimImage(here('figures/single_model/roc_prc.png'))
+dir.create(here('figures/single_model_via_50/'), recursive = T, showWarnings = F)
+ggsave(here('figures/single_model_via_50/roc_prc.png'), width=5,height=2.5)
+BerginskiRMisc::trimImage(here('figures/single_model_via_50/roc_prc.png'))
 ```
