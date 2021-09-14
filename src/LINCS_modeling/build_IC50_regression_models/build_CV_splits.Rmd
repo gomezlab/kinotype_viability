@@ -1,0 +1,223 @@
+---
+title: "Make CV Splits"
+author: "Matthew Berginski"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(tidymodels)
+library(tictoc)
+library(doParallel)
+
+knitr::opts_knit$set(root.dir = here())
+```
+
+```{r}
+dir.create(here('results/LINCS/IC50_regression_model'), recursive = T)
+
+PRISM_LINCS_IC50 = read_csv(here('data/LINCS/LINCS_PRISM_Kd_ic50_matrix.csv')) %>%
+	pivot_longer(-c(broad_id,depmap_id,ic50,name),names_to = "gene_name",values_to = "Kd") %>%
+	mutate(KS_gene_name = paste0("ks_",gene_name)) %>%
+	select(-gene_name) %>%
+	pivot_wider(names_from = KS_gene_name, values_from = Kd)
+
+depmap_data = read_rds(here('results/single_model/full_depmap_for_ML.rds'))
+
+CCLE_data = read_rds(here('results/single_model/full_CCLE_expression_set_for_ML.rds'))
+
+CNV_data = read_rds(here('results/single_model/full_CCLE_CNV_set_for_ML.rds'))
+
+proteomics_data = read_csv(here('data/CCLE_data/CCLE_proteomics_imputed_wide.csv.gz')) %>%
+	select(-CCLE_cell_line_name,-tenplex_number) %>% 
+	rename_with( ~ paste0("prot_", .x), -DepMap_ID)
+```
+
+```{r}
+PRISM_LINCS_IC50_all = PRISM_LINCS_IC50 %>%
+	filter(depmap_id %in% depmap_data$DepMap_ID) %>%
+	filter(depmap_id %in% CCLE_data$DepMap_ID) %>%
+	filter(depmap_id %in% CNV_data$DepMap_ID) %>%
+	filter(depmap_id %in% proteomics_data$DepMap_ID) %>%
+	left_join(depmap_data, by=c('depmap_id'='DepMap_ID')) %>%
+	left_join(CCLE_data, by=c('depmap_id'='DepMap_ID')) %>%
+	left_join(CNV_data, by=c('depmap_id'='DepMap_ID')) %>%
+	left_join(proteomics_data, by=c('depmap_id'='DepMap_ID')) %>%
+	mutate(ic50_log10 = log10(ic50)) %>%
+	mutate(ic50_log10_trun = case_when(
+		ic50_log10 < -2 ~ -2,
+		ic50_log10 > 1 ~ 1,
+		T ~ ic50_log10
+	)) %>%
+	identity()
+```
+
+```{r}
+find_feature_correlations <- function(row_indexes = NA) {
+	if (is.na(row_indexes)) {
+		row_indexes = 1:dim(PRISM_LINCS_IC50_all)[1]
+	}
+	
+all_cor = cor(
+	PRISM_LINCS_IC50_all %>% slice(row_indexes) %>% pull(ic50_log10_trun),
+	PRISM_LINCS_IC50_all %>% 
+		slice(row_indexes) %>%
+		select(starts_with("ks_"), 
+					 starts_with("dep_"), 
+					 starts_with("exp_"),
+					 starts_with("prot_"),
+					 starts_with("cnv_")
+		)) %>% 
+	as.data.frame() %>%
+	pivot_longer(everything(), names_to = "feature",values_to = "cor") %>%
+	mutate(abs_cor = abs(cor)) %>%
+	arrange(desc(abs_cor)) %>%
+	mutate(rank = 1:n()) %>%
+	mutate(feature_type = case_when(
+		str_detect(feature, "^ks_") ~ "KinomeScan",
+		str_detect(feature, "^act_") ~ "Activation",
+		str_detect(feature, "^exp_") ~ "Expression",
+		str_detect(feature, "^dep_") ~ "Depmap",
+		str_detect(feature, "^cnv_") ~ "CNV",
+		str_detect(feature, "^prot_") ~ "Proteomics",
+		T ~ feature
+	)) %>%
+	identity()
+	
+	return(all_cor)
+}
+```
+
+```{r}
+all_cor = find_feature_correlations()
+
+per_group_rank = all_cor %>%
+	group_by(feature_type) %>%
+	nest() %>%
+	mutate(group_rank = map(data, ~ .x %>%
+														mutate(sub_percent_rank = percent_rank(abs_cor*-1),
+																	 sub_rank = 1:n()))) %>%
+	unnest(cols = c(group_rank)) %>%
+	ungroup() %>%
+	select(feature,sub_rank,sub_percent_rank) %>%
+	identity()
+
+all_cor = all_cor %>%
+	left_join(per_group_rank)
+```
+```{r}
+dir.create(here('figures/LINCS/feature_selection_all'),recursive = T)
+ggplot(all_cor, aes(x=abs_cor)) +
+	geom_histogram() +
+	BerginskiRMisc::theme_berginski() +
+	labs(x="Absolute Value Correlation", y="Number of Features") +
+	facet_wrap(~feature_type,scales = "free_y")
+
+ggsave(here('figures/LINCS/feature_selection_all/feature_cor_histograms.png'),width=10)
+BerginskiRMisc::trimImage(here('figures/LINCS/feature_selection_all/feature_cor_histograms.png'))
+```
+
+```{r}
+ggplot(all_cor, aes(x=rank,y=sub_percent_rank,color=feature_type)) +
+	geom_vline(aes(xintercept = 500),alpha = 0.25, linetype = 2) +
+	geom_vline(aes(xintercept = 200),alpha = 0.25, linetype = 2) +
+	geom_vline(aes(xintercept = 1000),alpha = 0.25, linetype = 2) +
+	geom_vline(aes(xintercept = 1500),alpha = 0.25, linetype = 2) +
+	geom_line() +
+	labs(x="Feature Type Overall Correlation Rank",y="Percentile Sub Rank", color='') +
+	BerginskiRMisc::theme_berginski()
+ggsave(here('figures/LINCS/feature_selection_all/group_perc_rank.png'),width=6*0.75,height=5*0.75)
+BerginskiRMisc::trimImage(here('figures/LINCS/feature_selection_all/group_perc_rank.png'))
+
+
+ggplot(all_cor %>% filter(rank <= 2000), aes(x=rank,y=sub_percent_rank,color=feature_type)) +
+	geom_vline(aes(xintercept = 500),alpha = 0.25, linetype = 2) +
+	geom_vline(aes(xintercept = 200),alpha = 0.25, linetype = 2) +
+	geom_vline(aes(xintercept = 1000),alpha = 0.25, linetype = 2) +
+	geom_vline(aes(xintercept = 1500),alpha = 0.25, linetype = 2) +
+	geom_line() +
+	labs(x="Feature Type Overall Correlation Rank",y="Percentile Sub Rank", color='') +
+	BerginskiRMisc::theme_berginski()
+ggsave(here('figures/LINCS/feature_selection_all/group_perc_rank_zoom.png'),width=6*0.75,height=5*0.75)
+BerginskiRMisc::trimImage(here('figures/LINCS/feature_selection_all/group_perc_rank_zoom.png'))
+```
+
+```{r}
+ggplot(all_cor, aes(x=rank,y=sub_rank,color=feature_type)) +
+	geom_vline(aes(xintercept = 500),alpha = 0.25, linetype = 2) +
+	geom_vline(aes(xintercept = 200),alpha = 0.25, linetype = 2) +
+	geom_vline(aes(xintercept = 1000),alpha = 0.25, linetype = 2) +
+	geom_vline(aes(xintercept = 1500),alpha = 0.25, linetype = 2) +
+	geom_line() +
+	labs(x="Feature Type Overall Correlation Rank",y="Number of Features", color='') +
+	BerginskiRMisc::theme_berginski()
+ggsave(here('figures/LINCS/feature_selection_all/group_rank_count.png'),width=6*0.75,height=5*0.75)
+BerginskiRMisc::trimImage(here('figures/LINCS/feature_selection_all/group_rank_count.png'))
+
+ggplot(all_cor %>% filter(rank <= 2000), aes(x=rank,y=sub_rank,color=feature_type)) +
+	geom_vline(aes(xintercept = 500),alpha = 0.25, linetype = 2) +
+	geom_vline(aes(xintercept = 200),alpha = 0.25, linetype = 2) +
+	geom_vline(aes(xintercept = 1000),alpha = 0.25, linetype = 2) +
+	geom_vline(aes(xintercept = 1500),alpha = 0.25, linetype = 2) +
+	geom_line() +
+	labs(x="Feature Type Overall Correlation Rank",y="Number of Features", color='') +
+	BerginskiRMisc::theme_berginski()
+ggsave(here('figures/LINCS/feature_selection_all/group_rank_count_zoom.png'),width=6*0.75,height=5*0.75)
+BerginskiRMisc::trimImage(here('figures/LINCS/feature_selection_all/group_rank_count_zoom.png'))
+```
+
+```{r}
+build_regression_viability_set <- function(feature_cor, num_features, binary_threshold) {
+	viability_subset = PRISM_LINCS_IC50_all %>%
+		select(ic50_log10_trun,any_of(feature_cor$feature[1:num_features])) %>%
+		mutate(target_ic50_log10_trun = ic50_log10_trun)
+
+	return(viability_subset)
+}
+```
+
+```{r}
+if (file.exists(here('results/LINCS/IC50_regression_model/CV_split_row_nums.rds'))) {
+	fold_ids = read_rds(here('results/LINCS/IC50_regression_model/CV_split_row_nums.rds'))
+} else {
+	fold_ids = sample(rep(1:10,length.out = dim(PRISM_LINCS_IC50_all)[1]))
+	write_rds(fold_ids, here('results/LINCS/IC50_regression_model/CV_split_row_nums.rds'))
+}
+
+rand_forest_grid <- grid_regular(
+	trees(c(1000,5000)),
+	levels=5
+) %>% write_rds(here('results/LINCS/IC50_regression_model/hyper_param_search_space.rds'))
+```
+
+```{r}
+tic()
+for (i in 1:10) {
+	splits = list()
+	
+	these_feature_cor = find_feature_correlations(row_indexes = which(fold_ids != i))
+	
+	for (feature_num in c(200,500,1000,1500)) {
+		target_dir = here('results/LINCS/IC50_regression_model/',sprintf('CV_splits_%sfeat',feature_num))
+		dir.create(target_dir,recursive = T)
+		
+		splits[[1]] = make_splits(list("analysis" = which(fold_ids != i),"assessment" = which(fold_ids == i)),
+															build_regression_viability_set(these_feature_cor,feature_num,1))
+		
+		id = sprintf("Fold%02d",i)
+		
+		cross_validation_set = new_rset(
+			splits = splits,
+			ids = id,
+			attrib = sprintf("Per compound cv splits for fold ", i),
+			subclass = c("vfold_cv", "rset")
+		)	%>% write_rds(here(target_dir,sprintf('%02d.rds',i)), compress = 'gz')
+		
+	}
+	
+	print(paste0("Done with split: ",i))
+}
+toc()
+```
