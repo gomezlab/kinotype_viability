@@ -37,6 +37,8 @@ PRISM_klaeger_recipe = recipe(target_viability ~ ., viability_CV$splits[[1]]$dat
 	update_role(-starts_with("act_"),
 							-starts_with("exp_"),
 							-starts_with("dep_"),
+							-starts_with("cnv_"),
+							-starts_with("prot_"),
 							-starts_with("target_"), new_role = "id variable") %>%
 	prep()
 
