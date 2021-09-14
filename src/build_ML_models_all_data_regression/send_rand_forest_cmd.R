@@ -25,7 +25,7 @@ for (feature_num in c(200,500,1000,1500)) {
 			command = sprintf('sbatch --mem=64G --job-name=%s --time=24:00:00 --wrap "./build_random_forest_models_no_tune.R --feature_num %d --hyper_slice %d --fold_number %d"',job_name, feature_num, hyper_num, fold_num)
 
 			# print(command)
-			system(command)
+			# system(command)
 		}
 	}
 }
@@ -35,7 +35,7 @@ for (feature_num in c(200,500,1000,1500)) {
 		for (fold_num in 1:10) {
 			job_name = sprintf("XG_%d_%d",feature_num,fold_num)
 			
-			command = sprintf('sbatch --mem=64G --job-name=%s --time=24:00:00 --wrap "./build_random_xgboost_models_no_tune.R --feature_num %d --hyper_slice %d --fold_number %d"',job_name, feature_num, hyper_num, fold_num)
+			command = sprintf('sbatch --mem=64G --job-name=%s --time=24:00:00 --wrap "./build_xgboost_models_no_tune.R --feature_num %d --hyper_slice %d --fold_number %d"',job_name, feature_num, hyper_num, fold_num)
 			
 			# print(command)
 			system(command)
