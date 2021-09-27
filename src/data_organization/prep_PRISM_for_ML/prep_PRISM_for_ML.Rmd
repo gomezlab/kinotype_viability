@@ -25,7 +25,9 @@ response_curve_parameters = read_csv(here('data/PRISM/secondary/secondary-screen
 
 OK, so none of the concentrations used in the screening data match with the concentrations used in Klaeger. Fortunately, PRISM provides log logistic fits for all of the viability curves, so we'll use these curve fits to impute all the viability values at the Klaeger concentrations.
 
-The fitting methods used an R package named drc, which is described in this paper (https://doi.org/10.1371/journal.pone.0146021). The formula used below to impute the viability values is from the paper.
+The fitting methods used an R package named drc, which is described in this paper (https://doi.org/10.1371/journal.pone.0146021). Formula number 2 is used below to impute the viability values.
+
+https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0146021#pone.0146021.e008
 
 ```{r}
 broad_id_klaeger_conc = crossing(compound_match_list$broad_id, unique(klaeger_tidy$concentration_M))
@@ -42,6 +44,11 @@ klaeger_viability = response_curve_parameters %>%
 	left_join(compound_match_list %>% select(broad_id,drug)) %>%
 	group_by(depmap_id, drug, klaeger_conc) %>%
 	summarise(imputed_viability = mean(imputed_viability)) %>%
+	mutate(imputed_viability = case_when(
+		imputed_viability < 0 ~ 0,
+		imputed_viability > 2 ~ 2,
+		TRUE ~ imputed_viability
+	)) %>%
 	write_rds(here('results/PRISM_klaeger_imputed_tidy.rds'), compress = 'gz')
 ```
 
