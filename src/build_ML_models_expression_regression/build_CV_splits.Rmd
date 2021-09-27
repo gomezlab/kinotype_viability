@@ -11,9 +11,12 @@ library(here)
 library(tidymodels)
 library(tictoc)
 library(doParallel)
+library(patchwork)
 
 knitr::opts_knit$set(root.dir = here())
 ```
+
+# Load Data
 
 ```{r}
 dir.create(here('results/single_model_expression_regression'), recursive = T)
@@ -32,13 +35,14 @@ PRISM_klaeger_imputed = PRISM_klaeger_imputed %>%
 	ungroup()
 ```
 
+# Feature Selection Functions
 
 ```{r}
 find_feature_correlations <- function(row_indexes = NA) {
 	if (is.na(row_indexes)) {
 		row_indexes = 1:dim(PRISM_klaeger_imputed)[1]
 	}
-
+	
 	##############################################################################
 	# PRISM - Klaeger Activation Correlations
 	##############################################################################
@@ -103,10 +107,96 @@ find_feature_correlations <- function(row_indexes = NA) {
 ```
 
 ```{r}
+build_regression_viability_set <- function(feature_cor, num_features) {
+	
+	activation_set = klaeger_wide %>% 
+		select(any_of(feature_cor$feature[1:num_features]),'drug','concentration_M')
+	
+	CCLE_set = CCLE_data %>%
+		select(any_of(feature_cor$feature[1:num_features]),'DepMap_ID')
+	
+	regression_viability = PRISM_klaeger_imputed %>%
+		left_join(activation_set, by = c('drug'='drug', 'klaeger_conc' = 'concentration_M')) %>%
+		left_join(CCLE_set, by=c('depmap_id' = 'DepMap_ID')) %>%
+		mutate(target_viability = imputed_viability)
+	
+	return(regression_viability)
+}
+```
+
+# Assess Full Data Correlations
+
+```{r}
 tic()
 all_cor = find_feature_correlations()
 toc()
+```
 
+```{r}
+sd_set = bind_rows(
+	apply(klaeger_wide %>% 
+					select(contains("act_")),2,sd) %>% 
+		as.data.frame() %>%
+		rownames_to_column(var = "feature") %>%
+		rename(sd = '.'),
+	
+	apply(CCLE_data %>%
+					select(contains("exp_")),2,sd) %>%
+		as.data.frame() %>%
+		rownames_to_column(var = "feature") %>%
+		rename(sd = '.')
+)
+
+cor_and_sd = all_cor %>%
+	left_join(sd_set) %>%
+	mutate(feature_type = case_when(
+		str_detect(feature, "^act_") ~ "Activation",
+		str_detect(feature, "^exp_") ~ "Expression",
+		str_detect(feature, "^dep_") ~ "Depmap",
+		str_detect(feature, "^cnv_") ~ "CNV",
+		str_detect(feature, "^prot_") ~ "Proteomics",
+		T ~ feature
+	))
+
+ggplot(cor_and_sd, aes(x=abs_cor,y=sd)) + 
+	geom_hex() +
+	geom_smooth() +
+	BerginskiRMisc::theme_berginski() + 
+	labs(x = "Absolute Value Correlation",y="Feature Standard Deviation") +
+	facet_wrap(~feature_type, scales = "free")
+ggsave(here('figures/feature_selection_expression/correlation_vs_sd.png'))
+```
+
+```{r}
+only_act = cor_and_sd %>%
+	filter(feature_type == "Activation")
+
+act_only = ggplot(only_act, aes(x=abs_cor,y=sd)) + 
+	geom_point() +
+	geom_smooth() +
+	labs(x = "Absolute Value Correlation",y="Feature Standard Deviation") +
+	BerginskiRMisc::theme_berginski()
+
+non_cor = ggplot(only_act %>% filter(is.na(abs_cor)), aes(y=sd,x=1)) + 
+	geom_boxplot() +
+	ylim(c(0.015,0.36)) +
+	geom_jitter() +
+	labs(y='',x='') +
+	theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+				axis.title.y=element_blank()) +
+	BerginskiRMisc::theme_berginski()
+
+this_layout = "
+AAAAB"
+
+full_plot = act_only + non_cor + plot_layout(design = this_layout)
+full_plot
+ggsave(here('figures/feature_selection_expression/activation_cor_vs_sd.png'))
+```
+
+```{r}
 per_group_rank = all_cor %>%
 	group_by(feature_type) %>%
 	nest() %>%
@@ -184,23 +274,7 @@ ggsave(here('figures/feature_selection_expression/group_rank_count_zoom.png'),wi
 BerginskiRMisc::trimImage(here('figures/feature_selection_expression/group_rank_count_zoom.png'))
 ```
 
-```{r}
-build_regression_viability_set <- function(feature_cor, num_features) {
-	
-	activation_set = klaeger_wide %>% 
-		select(any_of(feature_cor$feature[1:num_features]),'drug','concentration_M')
-	
-	CCLE_set = CCLE_data %>%
-		select(any_of(feature_cor$feature[1:num_features]),'DepMap_ID')
-	
-	regression_viability = PRISM_klaeger_imputed %>%
-		left_join(activation_set, by = c('drug'='drug', 'klaeger_conc' = 'concentration_M')) %>%
-		left_join(CCLE_set, by=c('depmap_id' = 'DepMap_ID')) %>%
-		mutate(target_viability = imputed_viability)
-	
-	return(regression_viability)
-}
-```
+# Build Cross Validation Splits
 
 ```{r}
 if (file.exists(here('results/single_model_expression_regression/CV_split_row_nums.rds'))) {
@@ -216,13 +290,22 @@ rand_forest_grid <- data.frame(
 ```
 
 ```{r}
+if (! file.exists(here('results/single_model_expression_regression/full_model_data_set_1500feat.rds'))) {
+	all_cor = find_feature_correlations()
+	build_regression_viability_set(all_cor,1500) %>%
+		write_rds(here('results/single_model_expression_regression/full_model_data_set_1500feat.rds'), compress='gz')
+}
+```
+
+```{r}
 tic()
 for (i in 1:10) {
 	splits = list()
 	
 	these_feature_cor = find_feature_correlations(row_indexes = which(fold_ids != i))
 	
-	for (feature_num in c(200,500,1000,1500)) {
+	# for (feature_num in c(200,500,1000,1500)) {
+	for (feature_num in c(4000,5000,6000)) {
 		target_dir = here('results/single_model_expression_regression/',sprintf('CV_splits_%sfeat',feature_num))
 		dir.create(target_dir,recursive = T)
 		
