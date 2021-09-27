@@ -11,6 +11,8 @@ library(here)
 library(vroom)
 library(tictoc)
 library(tidymodels)
+library(DarkKinaseTools)
+library(patchwork)
 
 knitr::opts_knit$set(root.dir = here())
 Sys.setenv("VROOM_CONNECTION_SIZE" = 131072 * 10)
@@ -20,123 +22,39 @@ Sys.setenv("VROOM_CONNECTION_SIZE" = 131072 * 10)
 
 ```{r}
 ccle_expression = vroom(here('data/CCLE_data/CCLE_expression.csv.gz')) %>% 
-  rename(DepMap_ID = ...1)
+	rename(DepMap_ID = ...1)
 
 ccle_CNV = vroom(here('data/CCLE_data/CCLE_gene_cn.csv.gz')) %>% 
-  rename(DepMap_ID = ...1)
+	rename(DepMap_ID = ...1)
 
 ccle_mutations = vroom(here('data/CCLE_data/CCLE_mutations.csv.gz'))
 
 ccle_sample = vroom(here('data/CCLE_data/sample_info.csv.gz'))
 ```
 
-```{r}
-PRISM_klaeger_set = read_rds(here('results/PRISM_klaeger_imputed_tidy.rds'))
-PRISM_depmap_ids = unique(PRISM_klaeger_set$depmap_id)
-
-#I'm going to build a quick data frame here and then run a set of filters to get
-#a list of all the depmap IDs that are in all the data collections. Then I'll
-#use that full shared list of depmap_ids to filter everything else.
-shared_depmap_ids = data.frame(shared_depmap_ids = PRISM_depmap_ids) %>%
-	filter(shared_depmap_ids %in% unique(ccle_expression$DepMap_ID)) %>%
-	filter(shared_depmap_ids %in% ccle_CNV$DepMap_ID) %>%
-	filter(shared_depmap_ids %in% ccle_mutations$DepMap_ID) %>% 
-	pull(shared_depmap_ids)
-
-ccle_expression_no_filter_tidy = ccle_expression %>%
-  pivot_longer(-DepMap_ID, names_to = "gene_name", values_to = "log2_TPM") %>%
-  extract(gene_name,c("Hugo_Symbol","NCBI"),regex = "(.*) \\((.*)\\)")
-
-ccle_expression = ccle_expression %>%
-  filter(DepMap_ID %in% shared_depmap_ids)
-
-ccle_expression_tidy = ccle_expression %>%
-  pivot_longer(-DepMap_ID, names_to = "gene_name", values_to = "log2_TPM") %>%
-  extract(gene_name,c("Hugo_Symbol","NCBI"),regex = "(.*) \\((.*)\\)")
-
-ccle_CNV = ccle_CNV %>%
-  filter(DepMap_ID %in% shared_depmap_ids)
-
-ccle_CNV_tidy = ccle_CNV %>%
-  pivot_longer(-DepMap_ID, names_to = "gene_name", values_to = "CNV_val") %>%
-  extract(gene_name,c("Symbol","NCBI"),regex = "(.*) \\((.*)\\)")
-
-ccle_mutations = ccle_mutations %>%
-  filter(DepMap_ID %in% shared_depmap_ids)
-
-ccle_sample = ccle_sample %>%
-  filter(DepMap_ID %in% shared_depmap_ids)
-```
-
-# Model Feature Selection Parameters
-
-```{r}
-number_cell_lines = length(shared_depmap_ids)
-minimum_percent_all_lines_deleterious = 0.10
-
-total_genes_from_expression = 500
-minimum_average_TPM = 1
-```
-
-# Organizing CCLE Mutation Data
-
-There is a column named isDeleterious in the mutation data which I'm going to use to select which genes have enough mutational problems to include in the mutation part of the model. I'm doing two passes through the data set. The first one looks at mutational load across all the cell lines and selects the set of genes that are mutated in at least `r minimum_percent_all_lines_deleterious*100`% of the lines.
-
-```{r}
-full_set_ccle_mutation_summary = ccle_mutations %>%
-  group_by(DepMap_ID,Hugo_Symbol) %>%
-  summarise(has_deleterious = any(isDeleterious)) %>%
-  group_by(Hugo_Symbol) %>%
-  summarise(total_deleterious = sum(has_deleterious)) %>%
-  filter(total_deleterious >= minimum_percent_all_lines_deleterious*number_cell_lines) %>%
-  identity()
-
-ccle_mutation_model_set = ccle_mutations %>% 
-  filter(Hugo_Symbol %in% full_set_ccle_mutation_summary$Hugo_Symbol)
-```
-
-# Gene Expression Data
-
-We also need to select which genes from the gene expression data to include in the model. Since the model relies on variation in the predictors to try to guess the IC50 value, I'll first determine which genes vary the most in data. First, I'll filter out any genes with less than `r minimum_average_TPM` average TPM and then I'll calculate the coefficient of variation. High coefficients of variation indicate that a gene has a higher degree of variation corrected for the overall average expression, so I'll pick up the top `r total_genes_from_expression` genes from this list.
-
-```{r}
-expression_features = ccle_expression_tidy %>%
-  group_by(Hugo_Symbol) %>%
-  summarise(TPM_mean = mean(log2_TPM), 
-            TPM_sd = sd(log2_TPM),
-            TPM_CV = TPM_sd/TPM_mean) %>%
-  filter(TPM_mean > minimum_average_TPM) %>%
-  mutate(TPM_CV_ptile = percent_rank(TPM_CV)) %>%
-  arrange(desc(TPM_CV_ptile))
-
-expression_gene_set = expression_features$Hugo_Symbol[1:total_genes_from_expression]
-ccle_expression_model_set = ccle_expression_tidy %>% 
-  filter(Hugo_Symbol %in% expression_gene_set)
-
-ccle_expression_no_filter_model_set = ccle_expression_no_filter_tidy %>%
-	filter(Hugo_Symbol %in% expression_gene_set)
-```
-
 # Prepping Data for ML
 
 ```{r}
-ccle_expression_model_set %>% 
-  select(-NCBI) %>%
-  pivot_wider(names_from = Hugo_Symbol, values_from = log2_TPM, names_prefix = "exp_") %>%
-	write_rds(here('results/single_model/expression_set_for_ML.rds'), compress = 'gz')
-
-ccle_expression_no_filter_model_set %>% 
-  select(-NCBI) %>%
-  pivot_wider(names_from = Hugo_Symbol, values_from = log2_TPM, names_prefix = "exp_") %>%
+ccle_expression %>%
+  pivot_longer(-DepMap_ID, names_to = "gene_name", values_to = "log2_TPM") %>%
+  extract(gene_name,c("Hugo_Symbol","NCBI"),regex = "(.*) \\((.*)\\)") %>% 
+	select(-NCBI) %>%
+	pivot_wider(names_from = Hugo_Symbol, values_from = log2_TPM, names_prefix = "exp_") %>%
 	write_rds(here('results/single_model/full_CCLE_expression_set_for_ML.rds'), compress = 'gz')
 
-mutation_set_ML = ccle_mutation_model_set %>%
-  group_by(DepMap_ID,Hugo_Symbol) %>%
-  summarise(has_deletorius = ifelse(any(isDeleterious), 1, 0)) %>%
-  #This pivot_wider requires a values_fill because a majority of the values
-  #aren't present in the list because most of the genes don't have any mutations
-  #listed in the mutation collection. This indicates that there are no
-  #mutations, so this should be encoded as a zero.
-  pivot_wider(names_from = Hugo_Symbol, values_from = has_deletorius, names_prefix = "mut_", values_fill = 0) %>%
+ccle_CNV %>% pivot_longer(-DepMap_ID, names_to = "gene_name", values_to = "CNV_val") %>%
+  extract(gene_name,c("Symbol","NCBI"),regex = "(.*) \\((.*)\\)") %>%	
+	select(-NCBI) %>%
+	pivot_wider(names_from = Symbol, values_from = CNV_val, names_prefix = "cnv_") %>%
+	write_rds(here('results/single_model/full_CCLE_CNV_set_for_ML.rds'), compress = 'gz')
+	
+ccle_mutations %>%
+	group_by(DepMap_ID,Hugo_Symbol) %>%
+	summarise(has_deletorius = ifelse(any(isDeleterious), 1, 0)) %>%
+	#This pivot_wider requires a values_fill because a majority of the values
+	#aren't present in the list because most of the genes don't have any mutations
+	#listed in the mutation collection. This indicates that there are no
+	#mutations, so this should be encoded as a zero.
+	pivot_wider(names_from = Hugo_Symbol, values_from = has_deletorius, names_prefix = "mut_", values_fill = 0) %>%
 	write_rds(here('results/single_model/mutation_set_for_ML.rds'), compress = 'gz')
 ```
