@@ -1,0 +1,110 @@
+---
+title: "Make Rand Forest Predictions"
+author: "Matthew Berginski"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(tictoc)
+library(vip)
+
+knitr::opts_knit$set(root.dir = here())
+```
+
+# Load Data
+
+```{r}
+klaeger_wide = read_rds(here('results/klaeger_full_tidy.rds')) %>%
+	pivot_wider(names_from = gene_name, values_from = relative_intensity)
+
+PRISM_klaeger_viability = read_rds(here('results/PRISM_klaeger_imputed_tidy.rds')) %>%
+	left_join(klaeger_wide, by = c('drug'='drug', 'klaeger_conc' = 'concentration_M')) %>%
+	ungroup()
+
+rand_forest_best_params = read_rds(here('results/best_rand_forest_params.rds'))
+
+```
+
+# Build Models
+
+```{r}
+tic()
+
+if (file.exists(here('results/rand_forest_models.rds'))) {
+	binary_models = read_rds(here('results/rand_forest_models.rds'))
+} else {
+	binary_models = list()
+	
+	for (this_depmap_id in unique(PRISM_klaeger_viability$depmap_id)) {
+		this_config = rand_forest_best_params %>% filter(depmap_id == this_depmap_id)
+		
+		rand_forest_spec <- rand_forest(
+			trees = this_config$trees,
+			mtry = this_config$mtry,
+			min_n = this_config$min_n
+		) %>% 
+			set_engine("ranger", num.threads = parallel::detectCores() - 2,importance = "impurity") %>%
+			set_mode("classification")
+		
+		this_cell_line_data = PRISM_klaeger_viability %>%
+			filter(depmap_id == this_depmap_id) %>%
+			mutate(viability_split = as.factor(imputed_viability < median(imputed_viability))) %>%
+			select(-depmap_id,-klaeger_conc,-imputed_viability, -drug)
+		
+		binary_models[[this_depmap_id]] = rand_forest_spec %>%
+			fit(viability_split ~ ., data = this_cell_line_data)
+	}
+	write_rds(binary_models,here('results/rand_forest_models.rds'), compress = 'gz')
+}
+
+toc()
+```
+
+# VIP Data Summaries
+
+```{r}
+vip_data = data.frame()
+
+for (this_depmap_id in names(binary_models)) {
+	this_vip = binary_models[[this_depmap_id]] %>% vip(num_features = 1000)
+	
+	vip_data = vip_data %>%
+		bind_rows(this_vip$data %>% mutate(depmap_id = this_depmap_id))
+}
+
+total_vip = vip_data %>% 
+	group_by(Variable) %>% 
+	summarise(summed_importance = sum(Importance)) %>%
+	arrange(desc(summed_importance))
+```
+
+# Make Predictions
+
+```{r}
+tic()
+binary_split_predictions = data.frame()
+
+for (this_depmap_id in names(binary_models)) {
+	tested_compounds = PRISM_klaeger_viability %>%
+		filter(depmap_id == this_depmap_id) %>%
+		pull(drug) %>%
+		unique()
+	
+	untested_klaeger_set = klaeger_wide %>%
+		filter(concentration_M != 0) %>%
+		filter(!drug %in% tested_compounds)
+	
+	binary_split_predictions = binary_split_predictions %>%
+		bind_rows(binary_models[[this_depmap_id]] %>%
+								predict(untested_klaeger_set %>% select(-drug,-concentration_M), type='prob') %>%
+								mutate(depmap_id = this_depmap_id, 
+											 drug = untested_klaeger_set$drug,
+											 concentration_M = untested_klaeger_set$concentration_M))
+}
+toc()
+
+write_rds(binary_split_predictions,here('results/rand_forest_CL_model_predictions.rds'))
+```
