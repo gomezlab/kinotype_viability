@@ -1,0 +1,157 @@
+---
+title: "Compare Classification Models"
+author: "Matthew Berginski"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(tidymodels)
+library(ROCR)
+library(patchwork)
+library(tictoc)
+
+knitr::opts_knit$set(root.dir = here())
+```
+
+# Convenience Functions
+
+```{r}
+process_full_roc_data <- function(all_results) {
+	
+	roc_vals = data.frame()
+	for (model_id in unique(all_results$.config)) {
+		these_results = all_results %>% filter(.config == model_id)
+		
+		pred <- prediction(these_results$.pred_TRUE,these_results$target_viability_split)
+		perf_roc <- performance(pred, measure = "auc")
+		prc_roc <- performance(pred, measure = "aucpr")
+		
+		roc_vals = bind_rows(
+			roc_vals,
+			data.frame(model_id = model_id,roc = perf_roc@y.values[[1]],prc = prc_roc@y.values[[1]] )
+		)
+	}
+	
+	roc_vals = roc_vals %>%
+		mutate(roc_rank = dense_rank(desc(roc)),
+					 prc_rank = dense_rank(desc(prc))) %>%
+		arrange(roc_rank)
+}
+
+get_ROC_curve_values <- function(results) {
+	pred <- prediction(results$.pred_TRUE,results$target_viability_split)
+	perf <- performance(pred,measure = "tpr",x.measure = "fpr")
+	return(data.frame(fpr = perf@x.values[[1]],
+										tpr = perf@y.values[[1]]))
+}
+
+get_PRC_curve_values <- function(results) {
+	pred <- prediction(results$.pred_TRUE,results$target_viability_split)
+	perf <- performance(pred,measure = "prec",x.measure = "rec")
+	return(data.frame(precision = perf@y.values[[1]],
+										recall = perf@x.values[[1]]))
+}
+```
+
+```{r}
+best_ROC_curves = data.frame()
+best_PRC_curves = data.frame()
+
+for (feature_num in c(200,500,1000,1500)) {
+	
+	model_roc_prc = read_csv(here('results/single_model_all_data_via50',
+																sprintf('hyper_param_results_%dfeat.csv',feature_num)))
+	best_model_results = model_roc_prc %>% filter(roc_rank == 1)
+	
+	model_files = Sys.glob(here('results/single_model_all_data_via50',
+															sprintf('rand_forest_param_scan_%dfeat',feature_num),
+															sprintf('hyper%03d*.rds', best_model_results$hyper_set)))
+	
+	best_predictions = data.frame()
+	for (this_file in model_files) {
+		model_results = read_rds(this_file)
+		
+		imputed_via = model_results$splits[[1]]$data$imputed_viability[model_results$splits[[1]]$out_id]
+		
+		best_predictions = bind_rows(
+			best_predictions,
+			model_results %>%
+				collect_predictions() %>%
+				mutate(imputed_viability = imputed_via)
+		)
+	}
+	
+	best_ROC_curves = bind_rows(best_ROC_curves,
+															get_ROC_curve_values(best_predictions) %>%
+																mutate(data = paste0(feature_num," Feat\n",signif(best_model_results$roc,3))))
+	
+	best_PRC_curves = bind_rows(best_PRC_curves,
+															get_PRC_curve_values(best_predictions) %>%
+																mutate(data = paste0(feature_num," Feat\n",signif(best_model_results$prc,3))))
+	
+	
+}
+```
+
+```{r}
+best_ROC_curves = data.frame()
+best_PRC_curves = data.frame()
+
+for (feature_num in c(200,500,1000,1500)) {
+	
+
+	model_files = Sys.glob(here('results/single_model_all_data_via50',
+															sprintf('rand_forest_param_scan_%dfeat_notune',feature_num),
+															'*'))
+	
+	best_predictions = data.frame()
+	for (this_file in model_files) {
+		model_results = read_rds(this_file)
+		
+		best_predictions = bind_rows(
+			best_predictions,
+			model_results %>%
+				collect_predictions()
+		)
+	}
+	
+	best_model_results = process_full_roc_data(best_predictions)
+	
+	best_ROC_curves = bind_rows(best_ROC_curves,
+															get_ROC_curve_values(best_predictions) %>%
+																mutate(data = paste0(feature_num," Feat\n",signif(best_model_results$roc,3))))
+	
+	best_PRC_curves = bind_rows(best_PRC_curves,
+															get_PRC_curve_values(best_predictions) %>%
+																mutate(data = paste0(feature_num," Feat\n",signif(best_model_results$prc,3))))
+	
+	
+}
+```
+
+# Model Assessment/Visualization
+
+```{r}
+ROC_plots = ggplot(best_ROC_curves, aes(x=fpr, y=tpr, color=data)) + 
+	geom_abline(intercept = 0,slope = 1, alpha=0.5,linetype=2) +
+	geom_line() + 
+	# geom_text(mapping=aes(x=1,y=0,label=text),data=ROC_text,color='black',vjust="inward",hjust="inward",size=3.5) +
+	# geom_segment(x=0,y=0,xend=1,yend=1) +
+	xlim(c(0,1)) + ylim(c(0,1)) +
+	labs(x="False Positive Rate",y="True Positive Rate", color="") +
+	BerginskiRMisc::theme_berginski()
+
+PRC_plots = ggplot(best_PRC_curves, aes(x=recall, y=precision, color=data)) + 
+	geom_abline(intercept = 0.2,slope = 0, alpha=0.5,linetype=2) +
+	geom_line() + 
+	labs(x="Recall",y="Precision", color="") +
+	BerginskiRMisc::theme_berginski()
+
+model_assess_plots = ROC_plots + PRC_plots
+dir.create(here('figures/single_model_all_data_via50/'), recursive = T, showWarnings = F)
+ggsave(here('figures/single_model_all_data_via50/roc_prc_feat_count_comp.png'), width=8,height=2.5)
+BerginskiRMisc::trimImage(here('figures/single_model_all_data_via50/roc_prc_feat_count_comp.png'))
+```
