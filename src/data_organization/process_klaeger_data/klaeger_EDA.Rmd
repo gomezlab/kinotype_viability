@@ -1,0 +1,78 @@
+---
+title: "Klaeger EDA"
+author: "Matthew Berginski"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(ggrepel)
+library(patchwork)
+
+knitr::opts_knit$set(root.dir = here())
+```
+
+```{r}
+klaeger_full_tidy = read_rds(here('results/klaeger_full_tidy.rds'))
+
+PRISM_klaeger_viability = read_rds(here('results/PRISM_klaeger_imputed_tidy.rds')) %>%
+	left_join(klaeger_full_tidy, by = c('drug'='drug', 'klaeger_conc' = 'concentration_M'))
+```
+
+
+```{r}
+build_target_summary_figures <- function(target) {
+	klaeger_target = klaeger_full_tidy %>%
+		filter(gene_name == target, concentration_M != 0)
+	
+	target_effector = klaeger_target %>%
+		group_by(drug) %>%
+		summarise(effect = any(relative_intensity != 1)) %>%
+		filter(effect)
+	
+	klaeger_target = klaeger_target %>%
+		filter(drug %in% target_effector$drug)
+	
+	klaeger_plot = ggplot(klaeger_target, aes(x=log10(concentration_M), y=relative_intensity, color=drug, label=drug)) + 
+		geom_line() +
+		# geom_text_repel(data = high_klaeger_target, 
+		# 								mapping = aes(x=log10(concentration_M), y=relative_intensity, color=drug, label=drug), 
+		# 								nudge_x = 0.2, direction = "y", hjust = "left") + 
+		# scale_x_continuous(
+		# 	breaks = 1:2, labels = c("Dimension 1", "Dimension 2"),
+		# 	expand = expansion(mult = 0.5)
+		# ) +
+		NULL
+	
+	target_data = PRISM_klaeger_viability %>% 
+		filter(gene_name == target) %>%
+		select(-gene_name)
+	
+	target_effector = target_data %>%
+		group_by(drug) %>%
+		summarise(effect = any(relative_intensity != 1)) %>%
+		filter(effect)
+	
+	target_data = target_data %>%
+		filter(drug %in% target_effector$drug)
+	
+	viability_plot = ggplot(target_data, aes(x=relative_intensity,y=imputed_viability)) + 
+		geom_point(alpha=0.1) +
+		geom_smooth()
+	
+	both_plots = viability_plot
+	return(both_plots)
+}
+```
+
+```{r}
+dir.create(here('figures/klaeger_viability_EDA'), showWarnings = F, recursive = T)
+
+for (target in unique(klaeger_full_tidy$gene_name)) {
+	plot_set = build_target_summary_figures(target) +
+		BerginskiRMisc::theme_berginski()
+	ggsave(here('figures/klaeger_viability_EDA',paste0(target,'.png')), plot_set)
+}
+```
