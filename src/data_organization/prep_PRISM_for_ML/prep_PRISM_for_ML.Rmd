@@ -8,16 +8,17 @@ output: github_document
 ```{r setup, include=FALSE}
 library(tidyverse)
 library(here)
+library(vroom)
 
 knitr::opts_knit$set(root.dir = here())
 ```
 
 ```{r}
-compound_match_list = read_csv(here('src/find_PRISM_klaeger_matches/klaeger_PRISM_match_list.csv'))
+compound_match_list = read_csv(here('src/data_organization/find_PRISM_klaeger_matches/klaeger_PRISM_match_list.csv'))
 
 klaeger_tidy = read_rds(here('results/klaeger_full_tidy.rds'))
 
-response_curve_parameters = read_csv(here('data/PRISM/secondary/secondary-screen-dose-response-curve-parameters.csv')) %>%
+response_curve_parameters = vroom(here('data/PRISM/secondary/secondary-screen-dose-response-curve-parameters.csv')) %>%
 	#Filter only to compounds that match the Klaeger list and to cell lines that
 	#passed STR profiling
 	filter(broad_id %in% compound_match_list$broad_id, passed_str_profiling)
