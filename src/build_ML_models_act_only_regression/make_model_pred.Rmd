@@ -1,0 +1,111 @@
+---
+title: "Make Model Predictions"
+author: "Matthew Berginski"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(tidymodels)
+library(tictoc)
+
+knitr::opts_knit$set(root.dir = here())
+```
+
+```{r}
+klaeger_wide = read_rds(here('results/klaeger_full_tidy.rds')) %>%
+	mutate(act_gene_name = paste0("act_",gene_name)) %>%
+	select(-gene_name) %>%
+	pivot_wider(names_from = act_gene_name, values_from = relative_intensity)
+
+PRISM_klaeger_imputed = read_rds(here('results/PRISM_klaeger_imputed_tidy.rds'))
+
+CCLE_data = read_rds(here('results/single_model/full_CCLE_expression_set_for_ML.rds'))
+
+PRISM_klaeger_imputed = PRISM_klaeger_imputed %>%
+	filter(depmap_id %in% CCLE_data$DepMap_ID) %>%
+	ungroup()
+
+data_for_model_production = read_rds(here('results/single_model_expression_regression/full_model_data_set_1500feat.rds'))
+```
+
+```{r}
+possible_klaeger_CCLE_combos = crossing(
+	drug = unique(klaeger_wide$drug),
+	concentration_M = unique(klaeger_wide$concentration_M),
+	depmap_id = unique(CCLE_data$DepMap_ID)
+)
+
+already_tested_combos = PRISM_klaeger_imputed %>%
+	rename(concentration_M = klaeger_conc) %>%
+	select(depmap_id,drug,concentration_M) %>%
+	unique()
+
+non_tested_combos = possible_klaeger_CCLE_combos %>%
+	anti_join(already_tested_combos)
+
+not_tested_data = non_tested_combos %>%
+	left_join(klaeger_wide %>% select(drug,concentration_M,any_of(names(data_for_model_production)))) %>%
+	left_join(CCLE_data %>% 
+							select(DepMap_ID,any_of(names(data_for_model_production))),
+						by = c('depmap_id'='DepMap_ID')) %>%
+	filter(concentration_M != 0)
+
+```
+
+```{r}
+tic()
+if (file.exists(here('results/single_model_expression_regression/final_model_1500feat.rds'))) {
+	rand_forest_model = read_rds(here('results/single_model_expression_regression/final_model_1500feat.rds'))
+} else {
+	
+	PRISM_klaeger_recipe = recipe(target_viability ~ ., data_for_model_production) %>%
+		update_role(-starts_with("act_"),
+								-starts_with("exp_"),
+								-starts_with("dep_"),
+								-starts_with("target_"), new_role = "id variable") %>%
+		prep()
+	
+	rand_forest_spec <- rand_forest() %>% 
+		set_engine("ranger", num.threads = parallel::detectCores() - 2,importance = "impurity") %>%
+		set_mode("regression")
+	
+	rand_forest_wf <- workflow() %>%
+		add_model(rand_forest_spec) %>%
+		add_recipe(PRISM_klaeger_recipe)
+	
+	rand_forest_model = rand_forest_wf %>%
+		fit(data = data_for_model_production) %>%
+		write_rds(here('results/single_model_expression_regression/final_model_1500feat.rds'), compress = 'gz')
+	
+}
+toc()
+```
+
+```{r}
+model_predictions = data.frame()
+
+tic()
+
+for (this_conc in unique(not_tested_data$concentration_M)) {
+	this_subset = not_tested_data %>%
+		filter(concentration_M == this_conc)
+	this_subset$pred_via  = predict(rand_forest_model,
+																	this_subset %>%
+																		mutate(klaeger_conc = NA, imputed_viability = NA)) %>%
+		pull(.pred)
+
+	model_predictions = bind_rows(
+		model_predictions,
+		this_subset %>%
+			select(depmap_id,drug,concentration_M,pred_via)
+	)
+}
+
+model_predictions %>%
+	arrange(depmap_id,drug,concentration_M) %>%
+	write_rds(here('results/single_model_expression_regression/model_predictions_1500feat.rds'), compress = 'gz')
+toc()
+```
