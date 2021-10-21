@@ -1,0 +1,398 @@
+---
+title: "Feature Selection EDA"
+author: "Matthew Berginski"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(tidymodels)
+library(tictoc)
+library(doParallel)
+library(patchwork)
+
+knitr::opts_knit$set(root.dir = here())
+```
+
+```{r}
+dir.create(here('results/single_model_all_data_regression'), recursive = T)
+
+source(here('src/build_ML_models_all_data_regression/shared_features_selection.R'))
+
+klaeger_wide = read_rds(here('results/klaeger_full_tidy.rds')) %>%
+	mutate(act_gene_name = paste0("act_",gene_name)) %>%
+	select(-gene_name) %>%
+	pivot_wider(names_from = act_gene_name, values_from = relative_intensity)
+
+PRISM_klaeger_imputed = read_rds(here('results/PRISM_klaeger_imputed_tidy.rds'))
+print(length(unique(PRISM_klaeger_imputed$depmap_id)))
+
+depmap_data = read_rds(here('results/single_model/full_depmap_for_ML.rds'))
+
+CCLE_data = read_rds(here('results/single_model/full_CCLE_expression_set_for_ML.rds'))
+
+CNV_data = read_rds(here('results/single_model/full_CCLE_CNV_set_for_ML.rds'))
+
+proteomics_data = read_csv(here('data/CCLE_data/CCLE_proteomics_imputed_wide.csv.gz')) %>%
+	select(-CCLE_cell_line_name,-tenplex_number) %>% 
+	rename_with( ~ paste0("prot_", .x), -DepMap_ID)
+
+PRISM_klaeger_imputed = PRISM_klaeger_imputed %>%
+	filter(depmap_id %in% depmap_data$DepMap_ID) %>%
+	filter(depmap_id %in% CCLE_data$DepMap_ID) %>%
+	filter(depmap_id %in% CNV_data$DepMap_ID) %>%
+	filter(depmap_id %in% proteomics_data$DepMap_ID) %>%
+	ungroup()
+```
+
+
+# Assess Full Data Correlations
+
+```{r}
+tic()
+all_cor = find_feature_correlations()
+toc()
+
+per_group_rank = all_cor %>%
+	group_by(feature_type) %>%
+	nest() %>%
+	mutate(group_rank = map(data, ~ .x %>% 
+														mutate(sub_percent_rank = percent_rank(abs_cor*-1),
+																	 sub_rank = 1:n()))) %>%
+	unnest(cols = c(group_rank)) %>%
+	ungroup() %>%
+	select(feature,sub_rank,sub_percent_rank) %>%
+	identity()
+
+all_cor = all_cor %>%
+	left_join(per_group_rank)
+```
+
+## Overall Feature Correlation Plotting
+
+### Full Correlation Histograms
+```{r}
+ggplot(all_cor, aes(x=abs_cor)) +
+	geom_histogram() +
+	BerginskiRMisc::theme_berginski() +
+	labs(x="Absolute Value Correlation", y="Number of Features") +
+	xlim(c(0,NA)) +
+	facet_wrap(~feature_type,scales = "free_y")
+
+ggsave(here('figures/feature_selection_all/feature_cor_histograms.png'),width=6,height=3)
+BerginskiRMisc::trimImage(here('figures/feature_selection_all/feature_cor_histograms.png'))
+
+ggplot(all_cor, aes(x=abs_cor, y=after_stat(density), color=feature_type)) +
+	geom_freqpoly() +
+	BerginskiRMisc::theme_berginski() +
+	labs(x="Absolute Value Correlation", y="Density of Features", color="")
+
+ggsave(here('figures/feature_selection_all/feature_cor_freqpoly.png'),width=6,height=3)
+```
+
+### By Feature Type - Percentile Rank
+```{r}
+per_rank = ggplot(all_cor, aes(x=rank,y=sub_percent_rank,color=feature_type)) +
+	geom_line(size=1.5, alpha=0.75) +
+	labs(x="Overall Correlation Rank",y="Percentile Rank within Feature", color='') +
+	BerginskiRMisc::theme_berginski()
+ggsave(here('figures/feature_selection_all/group_perc_rank.png'),width=6*0.75,height=5*0.75)
+BerginskiRMisc::trimImage(here('figures/feature_selection_all/group_perc_rank.png'))
+
+per_rank_zoom = ggplot(all_cor %>% filter(rank <= 5500), aes(x=rank,y=sub_percent_rank,color=feature_type)) +
+	geom_line(size=1.5, alpha=0.75) +
+	labs(x="Overall Correlation Rank",y="Percentile Rank within Feature", color='') +
+	scale_x_continuous(breaks=seq(0,4000,by=2000)) +
+	theme(legend.position = "none", aspect.ratio = 1:1) +
+	BerginskiRMisc::theme_berginski()
+ggsave(here('figures/feature_selection_all/group_perc_rank_zoom.png'),width=6*0.75,height=5*0.75)
+BerginskiRMisc::trimImage(here('figures/feature_selection_all/group_perc_rank_zoom.png'))
+```
+
+### By Feature Type - Overall Rank
+```{r}
+rank_full = ggplot(all_cor, aes(x=rank,y=sub_rank,color=feature_type)) +
+	geom_line(size=1.5, alpha=0.75) +
+	labs(x="Overall Correlation Rank",y="Number of Features", color='') +
+	theme(plot.margin = margin(0, 0.5, 0, 0, "cm")) +
+	BerginskiRMisc::theme_berginski()
+ggsave(here('figures/feature_selection_all/group_rank_count.png'),width=6*0.75,height=5*0.75)
+BerginskiRMisc::trimImage(here('figures/feature_selection_all/group_rank_count.png'))
+
+ggsave(here('figures/feature_selection_all/selection_order_full.png'), 
+			 plot = rank_full + 
+			 	per_rank +
+			 	plot_layout(guides = "collect") &
+			 	theme(legend.position = 'bottom', legend.margin=margin(0,0,0,0), legend.box.margin=margin(-10,-10,-10,-10)),
+			 width=7.5,height=3.2)
+BerginskiRMisc::trimImage(here('figures/feature_selection_all/selection_order_full.png'))
+
+
+rank_zoom = ggplot(all_cor %>% filter(rank <= 5500), aes(x=rank,y=sub_rank,color=feature_type)) +
+	geom_line(size=1.5, alpha=0.75) +
+	labs(x="Overall Correlation Rank",y="Number of Features", color='') +
+	scale_x_continuous(breaks=seq(0,4000,by=2000)) +
+	theme(legend.position = "none", aspect.ratio = 1:1) +
+	BerginskiRMisc::theme_berginski()
+ggsave(here('figures/feature_selection_all/group_rank_count_zoom.png'),width=6*0.75,height=5*0.75)
+BerginskiRMisc::trimImage(here('figures/feature_selection_all/group_rank_count_zoom.png'))
+
+ggsave(here('figures/feature_selection_all/selection_order.png'), 
+			 plot = rank_zoom + 
+			 	per_rank_zoom + 
+			 	plot_layout(guides = "collect") & 
+			 	theme(legend.position = 'bottom', legend.margin=margin(0,0,0,0), legend.box.margin=margin(-10,-10,-10,-10)),
+			 width=7,height=3.2)
+BerginskiRMisc::trimImage(here('figures/feature_selection_all/selection_order.png'))
+```
+
+## Feature Correlations vs Standard Deviations
+
+```{r}
+sd_set = bind_rows(
+	apply(klaeger_wide %>% 
+					select(contains("act_")),2,sd) %>% 
+		as.data.frame() %>%
+		rownames_to_column(var = "feature") %>%
+		rename(sd = '.'),
+	
+	apply(CCLE_data %>%
+					select(contains("exp_")),2,sd) %>%
+		as.data.frame() %>%
+		rownames_to_column(var = "feature") %>%
+		rename(sd = '.'),
+	
+	apply(depmap_data %>%
+					select(contains("dep_")),2,sd) %>%
+		as.data.frame() %>%
+		rownames_to_column(var = "feature") %>%
+		rename(sd = '.'),
+	
+	apply(CNV_data %>%
+					select(contains("cnv_")),2,sd) %>%
+		as.data.frame() %>%
+		rownames_to_column(var = "feature") %>%
+		rename(sd = '.'),
+	
+	apply(proteomics_data %>%
+					select(contains("prot_")),2,sd) %>%
+		as.data.frame() %>%
+		rownames_to_column(var = "feature") %>%
+		rename(sd = '.')
+)
+
+
+cor_and_sd = all_cor %>%
+	left_join(sd_set) %>%
+	mutate(feature_type = case_when(
+		str_detect(feature, "^act_") ~ "Activation",
+		str_detect(feature, "^exp_") ~ "Expression",
+		str_detect(feature, "^dep_") ~ "Depmap",
+		str_detect(feature, "^cnv_") ~ "CNV",
+		str_detect(feature, "^prot_") ~ "Proteomics",
+		T ~ feature
+	))
+
+ggplot(cor_and_sd, aes(x=abs_cor,y=sd)) + 
+	geom_hex() +
+	geom_smooth(color='black') +
+	BerginskiRMisc::theme_berginski() + 
+	labs(x = "Absolute Value Correlation",y="Feature Standard Deviation",fill="# Data\nPoints") +
+	scale_fill_viridis_c() +
+	facet_wrap(~feature_type, scales = "free")
+
+ggsave(here('figures/feature_selection_all/correlation_vs_sd.png'),width=6,height=3)
+BerginskiRMisc::trimImage(here('figures/feature_selection_all/correlation_vs_sd.png'))
+```
+
+```{r}
+only_act = cor_and_sd %>%
+	filter(feature_type == "Activation")
+
+act_only = ggplot(only_act, aes(x=abs_cor,y=sd)) + 
+	geom_point() +
+	geom_smooth() +
+	labs(x = "Absolute Value Correlation",y="Feature Standard Deviation") +
+	BerginskiRMisc::theme_berginski()
+
+non_cor = ggplot(only_act %>% filter(is.na(abs_cor)), aes(y=sd,x=1)) + 
+	geom_boxplot() +
+	ylim(c(0.015,0.36)) +
+	geom_jitter() +
+	labs(y='',x='') +
+	theme(axis.title.x=element_blank(),
+				axis.text.x=element_blank(),
+				axis.ticks.x=element_blank(),
+				axis.title.y=element_blank()) +
+	BerginskiRMisc::theme_berginski()
+
+this_layout = "
+AAAAB"
+
+full_plot = act_only + non_cor + plot_layout(design = this_layout)
+full_plot
+ggsave(here('figures/feature_selection_all/activation_cor_vs_sd.png'))
+```
+
+# Build Cross Validation Data Figures
+
+```{r}
+feature_cor_sets = read_rds(here('results/single_model_all_data_regression/CV_set_correlations.rds'))
+
+all_cor_cv_sets = data.frame()
+for (i in 1:10) {
+	
+	per_group_rank = feature_cor_sets[[i]] %>%
+		group_by(feature_type) %>%
+		nest() %>%
+		mutate(group_rank = map(data, ~ .x %>% 
+															mutate(sub_percent_rank = percent_rank(abs_cor*-1),
+																		 sub_rank = 1:n()))) %>%
+		unnest(cols = c(group_rank)) %>%
+		ungroup() %>%
+		select(feature,sub_rank,sub_percent_rank) %>%
+		identity()
+	
+	all_cor_cv_sets = bind_rows(
+		all_cor_cv_sets,
+		feature_cor_sets[[i]] %>% 
+			left_join(per_group_rank) %>% 
+			mutate(fold = i)
+	)
+}
+
+tic()
+
+frac_features_in_all_folds = data.frame()
+for (this_num_feat in c(10:6000)) {
+	this_frac_in_all = all_cor_cv_sets %>% 
+		filter(rank <= this_num_feat) %>% 
+		count(feature) %>% 
+		count(n, name="num_times_in_fold") %>% 
+		mutate(num_times_norm = num_times_in_fold/this_num_feat) %>%
+		mutate(num_feat = this_num_feat)
+	
+	frac_features_in_all_folds = bind_rows(
+		frac_features_in_all_folds,
+		this_frac_in_all
+	)
+}
+frac_features_in_all_folds = frac_features_in_all_folds %>% 
+	mutate(frac_in_all = as.factor(paste0(n*10,'%'))) %>%
+	mutate(frac_in_all = fct_relevel(frac_in_all, paste0(c(10:1)*10,'%')))
+toc()
+```
+
+```{r}
+ggplot(frac_features_in_all_folds, aes(x=num_feat, y=num_times_norm,color=as.factor(frac_in_all))) + 
+	geom_line(size=1) +
+	labs(x="Number of Features Selected", 
+			 y="Fraction of Features Selected", 
+			 color="Percentage of Specific\nFeature Inclusion\nin CV Set") +
+	BerginskiRMisc::theme_berginski() +
+	theme(legend.margin=margin(0,0,0,0), 
+				legend.box.margin=margin(-10,0,-10,-10),
+				aspect.ratio = 1:1) +
+	NULL
+ggsave(here('figures/feature_selection_all/feat_select_in_CV_sets.png'),height=3.5,width=5)
+BerginskiRMisc::trimImage(here('figures/feature_selection_all/feat_select_in_CV_sets.png'))
+```
+
+# Correlation with Signif Tests
+
+```{r}
+# cor_with_tests = data.frame()
+# 
+# tic()
+# PRISM_klaeger_cor = PRISM_klaeger_imputed %>%
+# 	left_join(klaeger_wide, by = c('drug'='drug', 'klaeger_conc' = 'concentration_M')) %>%
+# 	select(-depmap_id,-drug,-klaeger_conc) %>%
+# 	identity()
+# 
+# this_viability = PRISM_klaeger_cor %>% pull(imputed_viability)
+# 
+# for (this_feature in names(PRISM_klaeger_cor)) {
+# 	if (this_feature == "imputed_viability") {
+# 		next;
+# 	} else {
+# 		cor_with_tests = cor_with_tests %>%
+# 			bind_rows(
+# 				tidy(cor.test(this_viability, PRISM_klaeger_cor %>% pull(!!this_feature))) %>% 
+# 					mutate(feature = this_feature)
+# 			)
+# 	}
+# }
+# rm(PRISM_klaeger_cor)
+# gc()
+# 
+# PRISM_proteomics_cor = PRISM_klaeger_imputed %>%
+# 	left_join(proteomics_data, by=c('depmap_id' = 'DepMap_ID')) %>%
+# 	select(-depmap_id,-drug,-klaeger_conc) %>%
+# 	identity()
+# 
+# this_viability = PRISM_proteomics_cor %>% pull(imputed_viability)
+# 
+# for (this_feature in names(PRISM_proteomics_cor)) {
+# 	if (this_feature == "imputed_viability") {
+# 		next;
+# 	} else {
+# 		cor_with_tests = cor_with_tests %>%
+# 			bind_rows(
+# 				tidy(cor.test(this_viability, PRISM_proteomics_cor %>% pull(!!this_feature))) %>% 
+# 					mutate(feature = this_feature)
+# 			)
+# 	}
+# }
+# rm(PRISM_proteomics_cor)
+# gc()
+# 
+# PRISM_CCLE_cor = PRISM_klaeger_imputed %>%
+# 	left_join(CCLE_data, by=c('depmap_id' = 'DepMap_ID')) %>%
+# 	select(-depmap_id,-drug,-klaeger_conc) %>%
+# 	identity()
+# 
+# this_viability = PRISM_CCLE_cor %>% pull(imputed_viability)
+# 
+# for (this_feature in names(PRISM_CCLE_cor)) {
+# 	if (this_feature == "imputed_viability") {
+# 		next;
+# 	} else {
+# 		cor_with_tests = cor_with_tests %>%
+# 			bind_rows(
+# 				tidy(cor.test(this_viability, PRISM_CCLE_cor %>% pull(!!this_feature))) %>% 
+# 					mutate(feature = this_feature)
+# 			)
+# 	}
+# }
+# rm(PRISM_CCLE_cor)
+# gc()
+# 
+# PRISM_depmap_cor = PRISM_klaeger_imputed %>%
+# 	left_join(depmap_data, by=c('depmap_id' = 'DepMap_ID')) %>%
+# 	select(-depmap_id,-drug,-klaeger_conc) %>%
+# 	identity()
+# 
+# this_viability = PRISM_depmap_cor %>% pull(imputed_viability)
+# 
+# for (this_feature in names(PRISM_depmap_cor)) {
+# 	if (this_feature == "imputed_viability") {
+# 		next;
+# 	} else {
+# 		cor_with_tests = cor_with_tests %>%
+# 			bind_rows(
+# 				tidy(cor.test(this_viability, PRISM_depmap_cor %>% pull(!!this_feature))) %>% 
+# 					mutate(feature = this_feature)
+# 			)
+# 	}
+# }
+# rm(PRISM_depmap_cor)
+# gc()
+# 
+# cor_with_tests = cor_with_tests %>% mutate(p.value.adj = p.adjust(p.value, method = "fdr"))
+# 
+# toc()
+
+
+```
