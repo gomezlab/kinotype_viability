@@ -1,0 +1,171 @@
+---
+title: "Search Space EDA"
+author: "Matthew Berginski"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(tidyHeatmap)
+
+knitr::opts_knit$set(root.dir = here())
+```
+
+```{r}
+full_CCLE_expression_set_for_ML <- readRDS(here("results/single_model/full_CCLE_expression_set_for_ML.rds"))
+
+klaeger_full_tidy <- readRDS(here("results/klaeger_full_tidy.rds"))
+
+PRISM_klaeger_imputed_tidy <- readRDS(here("results/PRISM_klaeger_imputed_tidy.rds")) %>%
+	filter(depmap_id %in% unique(full_CCLE_expression_set_for_ML$DepMap_ID))
+```
+
+```{r}
+all_combos = crossing(
+	drug = unique(klaeger_full_tidy$drug),
+	depmap_id = unique(full_CCLE_expression_set_for_ML$DepMap_ID)
+) 
+
+already_tested = PRISM_klaeger_imputed_tidy %>%
+	select(drug, depmap_id) %>%
+	unique() %>%
+	mutate(tested = 1)
+
+cell_line_compound_counts = PRISM_klaeger_imputed_tidy %>%
+	select(drug,depmap_id) %>%
+	unique() %>%
+	group_by(depmap_id) %>%
+	summarise(num_drugs = n()) %>%
+	arrange(desc(num_drugs)) %>%
+	mutate(depmap_id = fct_inorder(depmap_id)) %>%
+	add_row(depmap_id = unique(full_CCLE_expression_set_for_ML$DepMap_ID)[!unique(full_CCLE_expression_set_for_ML$DepMap_ID) %in% unique(PRISM_klaeger_imputed_tidy$depmap_id)],
+					num_drugs = 0) %>%	
+	mutate(depmap_id_num = 1:n())
+
+drug_line_compound_counts = PRISM_klaeger_imputed_tidy %>%
+	select(drug,depmap_id) %>%
+	unique() %>%
+	group_by(drug) %>%
+	summarise(num_lines = n()) %>%
+	arrange(desc(num_lines)) %>%
+	mutate(drug = fct_inorder(drug)) %>%
+	add_row(drug = unique(klaeger_full_tidy$drug)[!unique(klaeger_full_tidy$drug) %in% unique(PRISM_klaeger_imputed_tidy$drug)],
+					num_lines = 0) %>%
+	mutate(drug_id_num = 1:n())
+
+all_combos = all_combos %>% 
+	left_join(already_tested) %>%
+	mutate(tested = ifelse(is.na(tested), 0, 1)) %>%
+	mutate(depmap_id = fct_relevel(depmap_id, as.character(cell_line_compound_counts$depmap_id))) %>%
+	mutate(drug = fct_relevel(drug, as.character(drug_line_compound_counts$drug))) %>%
+	identity()
+```
+
+```{r}
+all_combos_extra = all_combos %>%
+	left_join(cell_line_compound_counts %>% select(depmap_id, depmap_id_num)) %>%
+	left_join(drug_line_compound_counts %>% select(drug, drug_id_num))
+
+# border = bind_rows(
+# 	data.frame(depmap_id_num = unique(all_combos_extra$depmap_id_num),
+# 						 drug_id_num = 0,
+# 						 tested = 2),
+# 	data.frame(depmap_id_num = unique(all_combos_extra$depmap_id_num),
+# 						 drug_id_num = max(all_combos_extra$drug_id_num)+1,
+# 						 tested = 2),
+# 	data.frame(drug_id_num = unique(all_combos_extra$drug_id_num),
+# 						 depmap_id_num = 0,
+# 						 tested = 2),
+# 	data.frame(drug_id_num = unique(all_combos_extra$drug_id_num),
+# 						 depmap_id_num = max(all_combos_extra$depmap_id_num)+1,
+# 						 tested = 2)
+# )
+
+# all_combos_extra = bind_rows(
+# 	all_combos_extra,
+# 	border
+# )
+
+mean_tested = list(
+	x = mean(all_combos_extra %>% filter(tested == 1) %>% pull(depmap_id_num)),
+	y = mean(all_combos_extra %>% filter(tested == 1) %>% pull(drug_id_num))
+)
+
+mean_not_tested = list(
+	x = mean(all_combos_extra %>% filter(tested == 0) %>% pull(depmap_id_num)),
+	y = mean(all_combos_extra %>% filter(tested == 0) %>% pull(drug_id_num))
+)
+
+ggplot(all_combos_extra, aes(y=drug_id_num,x=depmap_id_num, fill = as.factor(tested), width=1, height=1)) +
+	geom_tile() +
+	scale_fill_manual(values = c("black","white","blue")) +
+	theme_void() +
+	coord_fixed() +
+	theme(legend.position = "none") +
+	annotate("text",x=mean_tested$x, y=mean_tested$y, 
+					 label=paste0(signif(mean(all_combos_extra$tested),3)*100,"% Tested")) +
+	annotate("text",x=mean_not_tested$x, y=mean_not_tested$y, 
+					 label=paste0(signif(1-mean(all_combos_extra$tested),3)*100,"% Not Tested"), color='white') +
+	theme(legend.position = "none")
+ggsave(here('figures/single_model_expression/untested_feature_space.png'), dpi = 300, height=229*0.005, width=1379*0.005)
+BerginskiRMisc::trimImage(here('figures/single_model_expression/untested_feature_space.png'))
+system(paste("convert -bordercolor blue -border 2", 
+						 here('figures/single_model_expression/untested_feature_space.png'),
+						 here('figures/single_model_expression/untested_feature_space.png')))
+```
+
+```{r}
+ggplot(all_combos_extra, aes(y=drug_id_num,x=depmap_id_num, fill = as.factor(tested), width=1, height=1)) +
+	geom_tile() +
+	scale_fill_manual(values = c("white","black","blue")) +
+	theme_void() +
+	coord_fixed() +
+	theme(legend.position = "none") +
+	annotate("text",x=mean_tested$x, y=mean_tested$y, 
+					 label=paste0(signif(mean(all_combos_extra$tested),3)*100,"% Tested"), color='white') +
+	annotate("text",x=mean_not_tested$x, y=mean_not_tested$y, 
+					 label=paste0(signif(1-mean(all_combos_extra$tested),3)*100,"% Not Tested")) +
+	theme(legend.position = "none")
+ggsave(here('figures/single_model_expression/untested_feature_space_invert.png'), dpi = 300, height=229*0.005, width=1379*0.005)
+BerginskiRMisc::trimImage(here('figures/single_model_expression/untested_feature_space_invert.png'))
+system(paste("convert -bordercolor blue -border 2", 
+						 here('figures/single_model_expression/untested_feature_space_invert.png'),
+						 here('figures/single_model_expression/untested_feature_space_invert.png')))
+```
+# Failed Experiments
+
+```{r}
+ggplot(cell_line_compound_counts, aes(y=num_drugs,x=depmap_id_num)) + 
+	geom_col() +
+	ylim(c(0,229)) +
+	xlim(c(0,1379)) +
+	geom_vline(aes(xintercept = 0)) +
+	geom_vline(aes(xintercept = 1379)) +
+	geom_hline(aes(yintercept = 0)) +
+	geom_hline(aes(yintercept = 229))
+# theme_void()
+```
+
+```{r}
+all_combos_wide = all_combos %>%
+	pivot_wider(drug, names_from = depmap_id, values_from = tested) %>%
+	select(drug,any_of(cell_line_compound_counts$depmap_id),everything()) %>%
+	left_join(drug_line_compound_counts %>% select(drug,drug_id_num)) %>%
+	arrange(drug_id_num) %>%
+	select(-drug_id_num, -drug)
+
+
+png(here('test.png'))
+image(x=1:dim(all_combos_wide)[1], 
+			y = 1:dim(all_combos_wide)[2], 
+			z=as.matrix(all_combos_wide),
+			col = c("black", "white"))
+dev.off()
+```
+
+```{r}
+all_combos %>%
+	heatmap(drug,depmap_id, tested, palette_value = c("black","black","white"))
+```
