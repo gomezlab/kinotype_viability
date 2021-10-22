@@ -126,8 +126,6 @@ build_binarized_viability_set <- function(feature_cor, num_features, binary_thre
 	
 	return(binarized_viability)
 }
-
-build_binarized_viability_set(all_cor,500,1)
 ```
 
 ```{r}
@@ -157,7 +155,7 @@ for (i in 1:10) {
 		dir.create(target_dir,recursive = T)
 		
 		splits[[1]] = make_splits(list("analysis" = which(fold_ids != i),"assessment" = which(fold_ids == i)),
-															build_binarized_viability_set(these_feature_cor,feature_num,0.5))
+															build_binarized_viability_set(these_feature_cor,feature_num,1))
 		
 		id = sprintf("Fold%02d",i)
 		
