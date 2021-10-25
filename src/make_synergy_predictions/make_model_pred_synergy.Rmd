@@ -46,14 +46,7 @@ toc()
 ```
 
 ```{r}
-drug_list = sort(unique(klaeger_wide$drug))
 
-possible_klaeger_combos = crossing(
-	drug_1 = drug_list,
-	drug_2 = drug_list,
-	concentration_M_d1 = unique(klaeger_wide$concentration_M),
-	concentration_M_d2 = unique(klaeger_wide$concentration_M)
-) %>% filter(drug_1 > drug_2)
 
 ```
 
@@ -73,6 +66,15 @@ tic()
 if (file.exists(here('results/synergy_pred/klaeger_synergy_combos.rds'))) {
 	klaeger_combo_sets = read_rds(here('results/synergy_pred/klaeger_synergy_combos.rds'))
 } else {
+	drug_list = sort(unique(klaeger_wide$drug))
+	
+	possible_klaeger_combos = crossing(
+		drug_1 = drug_list,
+		drug_2 = drug_list,
+		concentration_M_d1 = unique(klaeger_wide$concentration_M),
+		concentration_M_d2 = unique(klaeger_wide$concentration_M)
+	) %>% filter(drug_1 > drug_2)
+	
 	klaeger_combo_sets = possible_klaeger_combos %>% 
 		mutate(klaeger_combo = pmap(list(drug_1,drug_2,concentration_M_d1,concentration_M_d2),calc_klaeger_combo)) %>%
 		unnest(klaeger_combo) %>%
@@ -86,17 +88,25 @@ toc()
 dir.create(here('results/synergy_pred/per_cell_line'), showWarnings = F)
 tic()
 
+split_lines = splitIndices(dim(klaeger_combo_sets)[1],10)
+
 for (this_line in TNBC_lines$DepMap_ID) {
-	this_prediction =  predict(rand_forest_model,
-														 klaeger_combo_sets %>%
-														 	mutate(DepMap_ID = this_line) %>%
-														 	left_join(CCLE_data_filtered) %>%
-														 	mutate(klaeger_conc = NA, imputed_viability = NA,depmap_id = NA,drug=NA))
+	all_pred = c()
+	for (i in 1:length(split_lines)) {
+		this_prediction =  predict(rand_forest_model,
+															 klaeger_combo_sets %>%
+															 	slice(split_lines[[i]]) %>%
+															 	mutate(DepMap_ID = this_line) %>%
+															 	left_join(CCLE_data_filtered) %>%
+															 	mutate(klaeger_conc = NA, imputed_viability = NA,depmap_id = NA,drug=NA))
+		all_pred = c(all_pred,this_prediction$.pred)
+		rm(this_prediction); gc()
+	}
 	
-	model_predictions = klaeger_combo_sets %>%
+	klaeger_combo_sets %>%
 		mutate(DepMap_ID = this_line) %>%	
 		select(DepMap_ID,drug_1,drug_2,concentration_M_d1,concentration_M_d2) %>%
-		mutate(via_pred = this_prediction$.pred) %>%
+		mutate(via_pred = all_pred) %>%
 		write_rds(here('results/synergy_pred/per_cell_line',paste0(this_line,'.rds')), compress = 'gz')
 }
 
