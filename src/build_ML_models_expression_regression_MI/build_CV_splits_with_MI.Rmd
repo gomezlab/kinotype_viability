@@ -1,0 +1,153 @@
+---
+title: "Make CV Splits"
+author: "Matthew Berginski"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(tidymodels)
+library(tictoc)
+library(doParallel)
+library(patchwork)
+library(infotheo)
+
+knitr::opts_knit$set(root.dir = here())
+```
+
+# Load Data
+
+```{r}
+dir.create(here('results/single_model_expression_regression_MI'), recursive = T)
+
+klaeger_wide = read_rds(here('results/klaeger_full_tidy.rds')) %>%
+	mutate(act_gene_name = paste0("act_",gene_name)) %>%
+	select(-gene_name) %>%
+	pivot_wider(names_from = act_gene_name, values_from = relative_intensity)
+
+PRISM_klaeger_imputed = read_rds(here('results/PRISM_klaeger_imputed_tidy.rds'))
+
+CCLE_data = read_rds(here('results/single_model/full_CCLE_expression_set_for_ML.rds'))
+
+PRISM_klaeger_imputed = PRISM_klaeger_imputed %>%
+	filter(depmap_id %in% CCLE_data$DepMap_ID) %>%
+	ungroup()
+
+source(here('src/build_ML_models_expression_regression_MI//shared_feature_selection_functions.r'))
+```
+
+```{r}
+# tic()
+# all_MI_vals = find_feature_MI()
+# toc()
+```
+
+```{r}
+# all_MI_vals = all_MI_vals %>%
+# 	mutate(feature_type = case_when(
+# 		str_detect(feature, "^act_") ~ "Activation",
+# 		str_detect(feature, "^exp_") ~ "Expression",
+# 		str_detect(feature, "^dep_") ~ "Depmap",
+# 		str_detect(feature, "^cnv_") ~ "CNV",
+# 		str_detect(feature, "^prot_") ~ "Proteomics",
+# 		T ~ feature
+# 	))
+# 
+# per_group_rank = all_MI_vals %>%
+# 	group_by(feature_type) %>%
+# 	nest() %>%
+# 	mutate(group_rank = map(data, ~ .x %>% 
+# 														mutate(sub_percent_rank = percent_rank(MI*-1),
+# 																	 sub_rank = 1:n()))) %>%
+# 	unnest(cols = c(group_rank)) %>%
+# 	ungroup() %>%
+# 	select(feature,sub_rank,sub_percent_rank) %>%
+# 	identity()
+# 
+# all_MI_vals = all_MI_vals %>%
+# 	left_join(per_group_rank)
+```
+
+```{r}
+# ggplot(all_MI_vals %>% filter(rank < 50000), aes(x=rank,y=sub_percent_rank,color=feature_type)) +
+# 	geom_line(size=1.5) +
+# 	labs(x="Overall Correlation Rank",y="Percentile Rank within Feature", color='') +
+# 	BerginskiRMisc::theme_berginski()
+```
+
+# Build Cross Validation Splits
+
+```{r}
+if (file.exists(here('results/single_model_expression_regression_MI/CV_split_row_nums.rds'))) {
+	fold_ids = read_rds(here('results/single_model_expression_regression_MI/CV_split_row_nums.rds'))
+} else {
+	fold_ids = sample(rep(1:10,length.out = dim(PRISM_klaeger_imputed)[1]))
+	write_rds(fold_ids, here('results/single_model_expression_regression_MI/CV_split_row_nums.rds'))
+}
+
+rand_forest_grid <- data.frame(
+	trees = seq(1000,5000,by=1000)
+) %>% write_rds(here('results/single_model_expression_regression_MI/hyper_param_search_space.rds'))
+```
+
+```{r}
+# if (! file.exists(here('results/single_model_expression_regression_MI/full_model_data_set_1500feat.rds'))) {
+# 	all_cor = find_feature_correlations()
+# 	build_regression_viability_set(all_cor,1500) %>%
+# 		write_rds(here('results/single_model_expression_regression_MI/full_model_data_set_1500feat.rds'), compress='gz')
+# }
+```
+
+```{r}
+tic()
+if (file.exists(here('results/single_model_expression_regression_MI/CV_set_correlations.rds'))) {
+	feature_cor_sets = read_rds(here('results/single_model_expression_regression_MI/CV_set_correlations.rds'))
+} else {
+
+	feature_cor_sets = list()
+	for (i in 1:10) {
+		splits = list()
+		
+		feature_cor_sets[[i]] = find_feature_MI(row_indexes = which(fold_ids != i))
+		
+		print(paste0("Done with split: ",i))
+		print(Sys.time())
+	}
+	write_rds(feature_cor_sets, 
+						here('results/single_model_expression_regression_MI/CV_set_correlations.rds'), 
+						compress = 'gz')
+	
+}
+toc()
+```
+
+```{r}
+tic()
+for (i in 1:10) {
+	splits = list()
+	
+	these_feature_cor = feature_cor_sets[[i]]
+	
+	for (feature_num in c(50,100,150,200,300,400,500,1000,1500,2000,3000,4000,5000)) {
+		target_dir = here('results/single_model_expression_regression_MI/',sprintf('CV_splits_%sfeat',feature_num))
+		dir.create(target_dir,recursive = T)
+		
+		splits[[1]] = make_splits(list("analysis" = which(fold_ids != i),"assessment" = which(fold_ids == i)),
+															build_regression_viability_set(these_feature_cor,feature_num))
+		
+		id = sprintf("Fold%02d",i)
+		
+		cross_validation_set = new_rset(
+			splits = splits,
+			ids = id,
+			attrib = sprintf("Per compound cv splits for fold ", i),
+			subclass = c("vfold_cv", "rset")
+		)	%>% write_rds(here(target_dir,sprintf('%02d.rds',i)), compress = 'gz')
+		
+	}
+	
+	print(paste0("Done with split: ",i))
+}
+toc()
