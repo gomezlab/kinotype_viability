@@ -1,11 +1,12 @@
 ---
-title: "Prep Validation Screen Data"
+title: "Prep double negative Validation Screen Data"
 author: "Chinmaya"
 date: "`r Sys.Date()`"
 output: github_document
 ---
 
 ```{r setup, include=FALSE}
+library(BerginskiRMisc)
 library(tidyverse)
 library(here)
 library(readxl)
@@ -55,29 +56,22 @@ read_csv_plate_data <- function(file_name,these_compounds,this_cell_line) {
 	return(temp_plate)
 }
 plate_vals = bind_rows(
-	read_csv_plate_data(here('data/PRISM_validation_screen/BT_1.csv'),c("sotrastaurin","ONO-4059 (analog)"),"BT-474"),
-	read_csv_plate_data(here('data/PRISM_validation_screen/BT_2.csv'),c("MLN-2480","TAK-733"),"BT-474"),
-	read_csv_plate_data(here('data/PRISM_validation_screen/BT_3.csv'),c("GDC-0994", "Ro-5126766"),"BT-474"),
-	read_csv_plate_data(here('data/PRISM_validation_screen/BT_4.csv'),c("Lestaurtinib","UCN-01"),"BT-474"),
-	read_csv_plate_data(here('data/PRISM_validation_screen/BT_5.csv'),c("PF-3758309","RGB-286638"),"BT-474"),
-	read_csv_plate_data(here('data/PRISM_validation_screen/BT_6.csv'),c("Pexmetinib", "K-252a"),"BT-474"),
-	read_csv_plate_data(here('data/PRISM_validation_screen/BT_7.csv'),c("Pexmetinib", "K-252a"),"BT-474"),
-	read_csv_plate_data(here('data/PRISM_validation_screen/BT_8.csv'),c("sotrastaurin","TAK-733"),"BT-474"),
-	
-	read_csv_plate_data(here('data/PRISM_validation_screen/HCC_1.csv'),c("sotrastaurin","ONO-4059 (analog)"),"HCC-1806"),
-	read_csv_plate_data(here('data/PRISM_validation_screen/HCC_2.csv'),c("MLN-2480","TAK-733"),"HCC-1806"),
-	read_csv_plate_data(here('data/PRISM_validation_screen/HCC_3.csv'),c("GDC-0994","Ro-5126766"),"HCC-1806"),
-	read_csv_plate_data(here('data/PRISM_validation_screen/HCC_4.csv'),c("Lestaurtinib","UCN-01"),"HCC-1806"),
-	read_csv_plate_data(here('data/PRISM_validation_screen/HCC_5.csv'),c("PF-3758309","RGB-286638"),"HCC-1806"),
-	read_csv_plate_data(here('data/PRISM_validation_screen/HCC_6.csv'),c("Pexmetinib", "K-252a"),"HCC-1806"),
-read_csv_plate_data(here('data/PRISM_validation_screen/HCC_7.csv'),c("Pexmetinib", "K-252a"),"HCC-1806"),
-read_csv_plate_data(here('data/PRISM_validation_screen/HCC_8.csv'),c("sotrastaurin","TAK-733"),"HCC-1806")
+	read_csv_plate_data(here('data/PRISM_validation_screen/SKBR3_1.csv'),c("RGB-286638","XL-228"),"SKBR3"),
+	read_csv_plate_data(here('data/PRISM_validation_screen/SKBR3_2.csv'),c("JANEX-1","Losmapimod"),"SKBR3"),
+	read_csv_plate_data(here('data/PRISM_validation_screen/SKBR3_3.csv'),c("K-252a", "CC-401"),"SKBR3"),
+	read_csv_plate_data(here('data/PRISM_validation_screen/SKBR3_4.csv'),c("Ceritinib","ACTB-1003"),"SKBR3"),
+	read_csv_plate_data(here('data/PRISM_validation_screen/SUM159_1.csv'),c("RGB-286638","XL-228"),"SUM159"),
+	read_csv_plate_data(here('data/PRISM_validation_screen/SUM159_2.csv'),c("JANEX-1","Losmapimod"),"SUM159"),
+	read_csv_plate_data(here('data/PRISM_validation_screen/SUM159_3.csv'),c("K-252a", "CC-401"),"SUM159"),
+	read_csv_plate_data(here('data/PRISM_validation_screen/SUM159_4.csv'),c("Ceritinib","ACTB-1003"),"SUM159")
 )
 
-plate_order = c("sotrastaurin","ONO-4059 (analog)","MLN-2480","TAK-733","GDC-0994",
-								"Ro-5126766", "Lestaurtinib", "UCN-01","PF-3758309","RGB-286638","Pexmetinib",
-								"K-252a","Pexmetinib", "K-252a", "sotrastaurin", "TAK-733")
-
+plate_order = c("RGB-286638","XL-228","JANEX-1","Losmapimod","K-252a", "CC-401", "Ceritinib","ACTB-1003")
+plate_vals = plate_vals %>%
+	mutate(compound = fct_relevel(as.factor(compound), plate_order))
+if (any(is.na(plate_vals$concentration_M))) {
+	stop("Found missing concentration value, this shouldn't happen.")
+}
 ```
 
 # Per Plate DMSO Boxplots
@@ -98,31 +92,31 @@ ggsave(here('figures/validation_screen/DMSO_boxplots.png'))
 # Per Plate Diagnostic Plotting/Analysis
 
 ```{r}
-# DMSO_checks = plate_vals %>% 
-# 	filter(compound == "DMSO") %>%
-# 	group_by(plate_name) %>%
-# 	nest() %>%
-# 	mutate(DMSO_1 = map_dbl(data, ~ tidy(t.test(lum ~ target_row, 
-# 																							data = .x %>% 
-# 																								mutate(target_row = ifelse(row == 1, 1, 0))))$p.value)) %>%
-# 	mutate(DMSO_2 = map_dbl(data, ~ tidy(t.test(lum ~ target_row, 
-# 																							data = .x %>% 
-# 																								mutate(target_row = ifelse(row == 2, 1, 0))))$p.value)) %>%
-# 	mutate(DMSO_3 = map_dbl(data, ~ tidy(t.test(lum ~ target_row, 
-# 																							data = .x %>% 
-# 																								mutate(target_row = ifelse(row == 3, 1, 0))))$p.value)) %>%
-# 	mutate(DMSO_4 = map_dbl(data, ~ tidy(t.test(lum ~ target_row, 
-# 																							data = .x %>% 
-# 																								mutate(target_row = ifelse(row == 4, 1, 0))))$p.value)) %>%
-# 	mutate(DMSO_5 = map_dbl(data, ~ tidy(t.test(lum ~ target_row, 
-# 																							data = .x %>% 
-# 																								mutate(target_row = ifelse(row == 5, 1, 0))))$p.value)) %>%
-# 	mutate(DMSO_6 = map_dbl(data, ~ tidy(t.test(lum ~ target_row, 
-# 																							data = .x %>% 
-# 																								mutate(target_row = ifelse(row == 6, 1, 0))))$p.value))
-# 	select(-data) %>%
-# 	pivot_longer(-plate_name, values_to = "p.value", names_to = "DMSO_row") %>%
-# 	mutate(p.value.adj = p.adjust(p.value, method="fdr"))
+DMSO_checks = plate_vals %>% 
+	filter(compound == "DMSO") %>%
+	group_by(plate_name) %>%
+	nest() %>%
+	mutate(DMSO_1 = map_dbl(data, ~ tidy(t.test(lum ~ target_row, 
+																							data = .x %>% 
+																								mutate(target_row = ifelse(row == 1, 1, 0))))$p.value)) %>%
+	mutate(DMSO_2 = map_dbl(data, ~ tidy(t.test(lum ~ target_row, 
+																							data = .x %>% 
+																								mutate(target_row = ifelse(row == 2, 1, 0))))$p.value)) %>%
+	mutate(DMSO_3 = map_dbl(data, ~ tidy(t.test(lum ~ target_row, 
+																							data = .x %>% 
+																								mutate(target_row = ifelse(row == 3, 1, 0))))$p.value)) %>%
+	mutate(DMSO_4 = map_dbl(data, ~ tidy(t.test(lum ~ target_row, 
+																							data = .x %>% 
+																								mutate(target_row = ifelse(row == 4, 1, 0))))$p.value)) %>%
+	mutate(DMSO_5 = map_dbl(data, ~ tidy(t.test(lum ~ target_row, 
+																							data = .x %>% 
+																								mutate(target_row = ifelse(row == 5, 1, 0))))$p.value)) %>%
+	mutate(DMSO_6 = map_dbl(data, ~ tidy(t.test(lum ~ target_row, 
+																							data = .x %>% 
+																								mutate(target_row = ifelse(row == 6, 1, 0))))$p.value)) %>%
+	select(-data) %>%
+	pivot_longer(-plate_name, values_to = "p.value", names_to = "DMSO_row") %>%
+	mutate(p.value.adj = p.adjust(p.value, method="fdr"))
 ```
 
 
@@ -158,7 +152,7 @@ if (! all(plate_DMSO_means$num_DMSO == max(plate_DMSO_means$num_DMSO))) {
 ```
 
 ```{r}
-qc_filter <- function(data_set, viability_threshold = 125) {
+qc_filter <- function(data_set, viability_threshold = 120) {
 	qc_fails = data_set %>% 
 		filter(viability > viability_threshold) %>% 
 		select(row,compound,cell_line,plate_name) %>% 
@@ -176,7 +170,7 @@ plate_vals_row_norm = plate_vals %>%
 	left_join(plate_DMSO_means) %>% 
 	mutate(viability = lum/DMSO_mean*100) %>%
 	qc_filter() %>%
-	write_rds(here('results/validation_results/validation_screen.rds'))
+	write_rds(here('results/validation_results/double_negative_validation_screen.rds'))
 
 treatment_via_summaries = plate_vals_row_norm %>% 
 	group_by(compound, concentration_M, cell_line) %>%
@@ -199,6 +193,6 @@ ggplot(plate_vals_row_norm %>% filter(compound != "DMSO"), aes(x=concentration_M
 	facet_grid(rows = vars(cell_line), cols = vars(compound)) +
 	ggtitle("")
 
-ggsave(here('figures/validation_screen/validation_viabilities_row_norm.png'),width=20*0.75,height=15*0.75)
-BerginskiRMisc::trimImage(here('figures/validation_screen/validation_viabilities_row_norm.png'))
+ggsave(here('figures/validation_screen/double_negative_validation_viabilities_row_norm.png'),width=20*0.75,height=15*0.75)
+BerginskiRMisc::trimImage(here('figures/double_negative_validation_screen/validation_viabilities_row_norm.png'))
 ```
