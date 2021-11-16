@@ -10,7 +10,7 @@ library(argparse)
 tic()
 
 parser <- ArgumentParser(description='Process input paramters')
-parser$add_argument('--feature_num', default = 1500, type="integer")
+parser$add_argument('--feature_num', default = 200, type="integer")
 parser$add_argument('--hyper_slice', default = 1, type="integer")
 parser$add_argument('--fold_number', default = 1, type="integer")
 
@@ -18,14 +18,14 @@ parser$add_argument('--fold_number', default = 1, type="integer")
 args = parser$parse_args()
 print(sprintf('Hyper: %03d, Fold: %02d',args$hyper_slice,args$fold_number))
 
-dir.create(here('results/LINCS/IC50_regression_model/', 
+dir.create(here('results/single_model_dose_regression/', 
 								sprintf('rand_forest_param_scan_%dfeat_notune/',args$feature_num)), showWarnings = F)
 
-output_file = here('results/LINCS/IC50_regression_model/', 
+output_file = here('results/single_model_dose_regression/', 
 									 sprintf('rand_forest_param_scan_%dfeat_notune/',args$feature_num),
 									 sprintf('hyper%03d_fold%02d.rds',args$hyper_slice,args$fold_number))
 
-viability_CV = read_rds(here('results/LINCS/IC50_regression_model',
+viability_CV = read_rds(here('results/single_model_dose_regression',
 																			 sprintf('CV_splits_%dfeat/',args$feature_num),
 																			 sprintf('%02d.rds',args$fold_number)))
 
@@ -33,22 +33,20 @@ viability_CV = read_rds(here('results/LINCS/IC50_regression_model',
 # Build Models
 ###############################################################################
 
-PRISM_KS_recipe = recipe(target_ic50_log10_trun ~ ., viability_CV$splits[[1]]$data) %>%
-	update_role(-starts_with("target_"),
-							-starts_with("ks_"), 
-							-starts_with("dep_"), 
+PRISM_klaeger_recipe = recipe(target_viability ~ ., viability_CV$splits[[1]]$data) %>%
+	update_role(-starts_with("act_"),
 							-starts_with("exp_"),
-							-starts_with("prot_"),
-							-starts_with("cnv_"), new_role = "id variable") %>%
+							-starts_with("dep_"),
+							-starts_with("target_"), new_role = "id variable") %>%
 	prep()
 
 rand_forest_spec <- rand_forest() %>% 
-	set_engine("ranger") %>%
+	set_engine("ranger", num.threads = 8) %>%
 	set_mode("regression")
 
 rand_forest_wf <- workflow() %>%
 	add_model(rand_forest_spec) %>%
-	add_recipe(PRISM_KS_recipe)
+	add_recipe(PRISM_klaeger_recipe)
 
 model_results <- tune_grid(
 	rand_forest_wf,
