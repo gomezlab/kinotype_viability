@@ -18,10 +18,17 @@ args = parser$parse_args()
 print(sprintf('Fold: %02d',args$fold_number))
 
 dir.create(here('results/single_model_expression_regression_LOLO/', 
-								sprintf('rand_forest_param_scan_%dfeat_notune/',args$feature_num)), showWarnings = F)
+								sprintf('rand_forest_%dfeat_notune/',args$feature_num)), showWarnings = F)
 
-output_file = here('results/single_model_expression_regression_LOLO/', 
-									 sprintf('rand_forest_param_scan_%dfeat_notune/',args$feature_num),
+full_output_file = here('results/single_model_expression_regression_LOLO/', 
+									 sprintf('rand_forest_%dfeat_notune/',args$feature_num),
+									 sprintf('fold%04d.rds',args$fold_number))
+
+dir.create(here('results/single_model_expression_regression_LOLO/', 
+								sprintf('rand_forest_%dfeat_notune_pred/',args$feature_num)), showWarnings = F)
+
+pred_output_file = here('results/single_model_expression_regression_LOLO/', 
+									 sprintf('rand_forest_%dfeat_notune_pred/',args$feature_num),
 									 sprintf('fold%04d.rds',args$fold_number))
 
 viability_CV = read_rds(here('results/single_model_expression_regression_LOLO',
@@ -51,6 +58,8 @@ model_results <- tune_grid(
 	rand_forest_wf,
 	resamples = viability_CV,
 	control = control_grid(save_pred = TRUE)
-) %>% write_rds(output_file, compress = 'gz')
+) %>% write_rds(full_output_file, compress = 'gz')
+
+write_rds(model_results$.predictions[[1]], pred_output_file, compress = 'gz')
 
 toc()
