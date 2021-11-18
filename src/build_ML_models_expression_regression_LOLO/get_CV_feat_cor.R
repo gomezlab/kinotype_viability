@@ -12,6 +12,7 @@ tic()
 
 parser <- ArgumentParser(description='Process input paramters')
 parser$add_argument('--CV_fold_ID', default = 1, type="integer")
+parser$add_argument('--feat_num', default = 1500, type="integer")
 
 args = parser$parse_args()
 
@@ -45,5 +46,22 @@ dir.create(here('results/single_model_expression_regression_LOLO/CV_feature_cors
 write_rds(feature_cor,
 					here('results/single_model_expression_regression_LOLO/CV_feature_cors/',sprintf('%04d.rds',args$CV_fold_ID)),
 					compress = 'gz')
+
+target_dir = here('results/single_model_expression_regression_LOLO/',sprintf('CV_splits_%sfeat',args$feat_num))
+dir.create(target_dir,recursive = T, showWarnings = F)
+
+splits = list()
+
+splits[[1]] = make_splits(list("analysis" = which(fold_ids != args$CV_fold_ID),"assessment" = which(fold_ids == args$CV_fold_ID)),
+													build_regression_viability_set(feature_cor,args$feat_num))
+
+id = sprintf("Fold%02d",args$CV_fold_ID)
+
+cross_validation_set = new_rset(
+	splits = splits,
+	ids = id,
+	attrib = sprintf("Per compound cv splits for fold ", args$CV_fold_ID),
+	subclass = c("vfold_cv", "rset")
+)	%>% write_rds(here(target_dir,sprintf('%04d.rds',args$CV_fold_ID)), compress = 'gz')
 
 toc()
