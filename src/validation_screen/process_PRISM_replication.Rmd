@@ -1,0 +1,193 @@
+---
+title: "Prep PRISM Replication Screen Data"
+author: "Chinmaya"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(readxl)
+library(patchwork)
+library(broom)
+```
+
+# Read in plate data
+
+All the data from the plate reader is collected into a set of excel spreadsheets. The luminescence values show up at the bottom of the spreadsheet. I've manually matched up the names of the excel files to the appropriate cell line names and compounds in each plate. There is a text file with the same information in the same data folder I've read these files from.
+
+The plate is organized with the concentrations decreasing over each column of the plate, following the concentration used in Klaeger. The last two columns in each plate are DMSO controls.
+
+```{r}
+read_csv_plate_data <- function(file_name,these_compounds,this_cell_line) {
+	
+	temp_plate = read_csv(file_name, col_names = FALSE) %>%
+		select(-X1, -X12) %>%
+		slice(2:7) %>%
+		mutate(row = 1:6) %>% 
+		mutate(compound = c(rep(these_compounds[1],3),rep(these_compounds[2],3))) %>%
+		pivot_longer(-c(compound,row), names_to = "concentration_M",values_to = "lum") %>%
+		mutate(cell_line = this_cell_line, plate_name = basename(file_name)) %>%
+		mutate(lum = as.numeric(lum)) %>% 
+		identity()
+	
+	DMSO_vals = temp_plate %>%
+		filter(concentration_M == "X10" | concentration_M == "X11") %>%
+		mutate(concentration_M = 0) %>%
+		mutate(compound = "DMSO")
+	
+	temp_plate = temp_plate %>%
+		filter(concentration_M != "X10", concentration_M != "X11") %>%
+		mutate(concentration_M = case_when(
+			concentration_M == "X2" ~ 3e-5,
+			concentration_M == "X3" ~ 3e-6,
+			concentration_M == "X4" ~ 1e-6,
+			concentration_M == "X5" ~ 3e-7,
+			concentration_M == "X6" ~ 1e-7,
+			concentration_M == "X7" ~ 3e-8,
+			concentration_M == "X8" ~ 1e-8,
+			concentration_M == "X9" ~ 3e-9,
+			T ~ NA_real_
+		)) %>%
+		bind_rows(DMSO_vals)
+	
+	return(temp_plate)
+}
+plate_vals = bind_rows(
+	read_csv_plate_data(here('data/PRISM_validation_screen/HCC_PRISM_1.csv'),c("Dinaciclib","Lestaurtinib"),"HCC-1806"),
+	read_csv_plate_data(here('data/PRISM_validation_screen/HCC_PRISM_2.csv'),c("TAK-733","Trametinib"),"HCC-1806"),
+	read_csv_plate_data(here('data/PRISM_validation_screen/HCC_PRISM_3.csv'),c("Masitinib","Palbociclib"),"HCC-1806"),
+	read_csv_plate_data(here('data/PRISM_validation_screen/HCC_PRISM_4.csv'),c("AT-9283","UCN-01"),"HCC-1806"),
+	read_csv_plate_data(here('data/PRISM_validation_screen/HCC_PRISM_5.csv'),c("Gilteritinib","Cobimetinib"),"HCC-1806"),
+	read_csv_plate_data(here('data/PRISM_validation_screen/HCC_PRISM_6.csv'),c("KW-2449","MK-2206"),"HCC-1806")
+)
+
+plate_order = c("Dinaciclib","Lestaurtinib","TAK-733","Trametinib","Masitinib",
+								"Palbociclib", "AT-9283", "UCN-01","Gilteritinib","Cobimetinib","KW-2449",
+								"K-252a","MK-2206")
+
+```
+
+# Per Plate DMSO Boxplots
+
+```{r}
+all_DMSO_vals = plate_vals %>%
+	filter(compound == "DMSO") %>%
+	mutate(plate_name = paste0(plate_name))
+
+ggplot(all_DMSO_vals, aes(x=plate_name,y=lum)) + 
+	geom_boxplot() +
+	# ylim(c(min(plate_vals$lum), NA)) +
+	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+ggsave(here('figures/validation_screen/HCC_PRISM_DMSO_boxplots.png'))
+```
+
+# Per Plate Diagnostic Plotting/Analysis
+
+```{r}
+# DMSO_checks = plate_vals %>% 
+# 	filter(compound == "DMSO") %>%
+# 	group_by(plate_name) %>%
+# 	nest() %>%
+# 	mutate(DMSO_1 = map_dbl(data, ~ tidy(t.test(lum ~ target_row, 
+# 																							data = .x %>% 
+# 																								mutate(target_row = ifelse(row == 1, 1, 0))))$p.value)) %>%
+# 	mutate(DMSO_2 = map_dbl(data, ~ tidy(t.test(lum ~ target_row, 
+# 																							data = .x %>% 
+# 																								mutate(target_row = ifelse(row == 2, 1, 0))))$p.value)) %>%
+# 	mutate(DMSO_3 = map_dbl(data, ~ tidy(t.test(lum ~ target_row, 
+# 																							data = .x %>% 
+# 																								mutate(target_row = ifelse(row == 3, 1, 0))))$p.value)) %>%
+# 	mutate(DMSO_4 = map_dbl(data, ~ tidy(t.test(lum ~ target_row, 
+# 																							data = .x %>% 
+# 																								mutate(target_row = ifelse(row == 4, 1, 0))))$p.value)) %>%
+# 	mutate(DMSO_5 = map_dbl(data, ~ tidy(t.test(lum ~ target_row, 
+# 																							data = .x %>% 
+# 																								mutate(target_row = ifelse(row == 5, 1, 0))))$p.value)) %>%
+# 	mutate(DMSO_6 = map_dbl(data, ~ tidy(t.test(lum ~ target_row, 
+# 																							data = .x %>% 
+# 																								mutate(target_row = ifelse(row == 6, 1, 0))))$p.value))
+# 	select(-data) %>%
+# 	pivot_longer(-plate_name, values_to = "p.value", names_to = "DMSO_row") %>%
+# 	mutate(p.value.adj = p.adjust(p.value, method="fdr"))
+```
+
+
+```{r}
+treatment_lum_summaries = plate_vals %>%
+	filter(compound != "DMSO") %>% 
+	group_by(compound, concentration_M, cell_line) %>%
+	summarise(sd = sd(lum),
+						num_samples = n(),
+						mean_lum = mean(lum),
+						CV = sd/mean_lum)
+
+ggplot(treatment_lum_summaries, aes(x=CV)) + geom_histogram()
+ggsave(here('figures/validation_screen/HCC_PRISM_lum_distribution.png'))
+
+```
+
+# Per row Normalization
+
+```{r}
+plate_DMSO_means = plate_vals %>%
+	filter(compound == "DMSO") %>%
+	group_by(row, plate_name, cell_line) %>%
+	summarise(DMSO_mean = mean(lum),
+						num_DMSO = n())
+
+if (! all(plate_DMSO_means$num_DMSO == max(plate_DMSO_means$num_DMSO))) {
+	stop("Number of DMSO values in a plate isn't correct.")
+} else {
+	plate_DMSO_means = plate_DMSO_means %>% select(-num_DMSO)
+}
+
+```
+
+```{r}
+qc_filter <- function(data_set, viability_threshold = 125) {
+	qc_fails = data_set %>% 
+		filter(viability > viability_threshold) %>% 
+		select(row,compound,cell_line,plate_name) %>% 
+		unique() %>%
+		mutate(qc_fail = T)
+	
+	data_set = data_set %>%
+		left_join(qc_fails) %>%
+		mutate(qc_fail = ifelse(is.na(qc_fail), F, T))
+	
+	return(data_set)
+}
+dir.create(here('results/validation_results/'), showWarnings = F)
+plate_vals_row_norm = plate_vals %>%
+	left_join(plate_DMSO_means) %>% 
+	mutate(viability = lum/DMSO_mean*100) %>%
+	qc_filter() %>%
+	write_rds(here('results/validation_results/HCC_PRISM_replication_screen.rds'))
+
+treatment_via_summaries = plate_vals_row_norm %>% 
+	group_by(compound, concentration_M, cell_line) %>%
+	summarise(sd = sd(viability),
+						num_samples = n(),
+						mean_via = mean(viability),
+						CV = sd/mean_via)
+
+```
+
+```{r}
+ggplot(plate_vals_row_norm %>% filter(compound != "DMSO"), aes(x=concentration_M, y = viability, color=qc_fail)) +
+	geom_hline(aes(yintercept = 90),alpha=0.5) +
+	geom_hline(aes(yintercept = 100),alpha=0.5, linetype = 2) +
+	geom_hline(aes(yintercept = 120),alpha=0.5, linetype = 2) +
+	scale_x_log10() +
+	geom_jitter() +
+	geom_smooth() +
+	BerginskiRMisc::theme_berginski() +
+	facet_grid(rows = vars(cell_line), cols = vars(compound)) +
+	ggtitle("")
+
+ggsave(here('figures/validation_screen/PRISM_replication_viabilities_row_norm.png'),width=20*0.75,height=15*0.75)
+BerginskiRMisc::trimImage(here('figures/validation_screen/PRISM_replication_viabilities_row_norm.png'))
+```
