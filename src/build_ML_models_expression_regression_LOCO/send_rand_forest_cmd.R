@@ -3,15 +3,14 @@
 library(here)
 library(tidyverse)
 
-rand_forest_grid = read_rds(here('results/single_model_expression_regression/hyper_param_search_space.rds'))
-
+fold_ids = read_rds(here('results/single_model_expression_regression_LOCO/CV_split_row_nums.rds'))
 
 for (feature_num in c(1500)) {
-	for (fold_num in 1:476) {
+	for (fold_num in unique(fold_ids)) {
 		
 		job_name = sprintf('RF_%d_%04d',feature_num,fold_num)
 		
-		command = sprintf('sbatch --job-name=%s --mem=45G -c 8 --time=7-00:00:00 --wrap "./build_random_forest_models_no_tune.R --feature_num %d --fold_number %d"', job_name, feature_num, fold_num)
+		command = sprintf('sbatch --job-name=%s --mem=64G -c 8 --time=7-00:00:00 --wrap "./build_random_forest_models_no_tune.R --feature_num %d --fold_number %d"', job_name, feature_num, fold_num)
 		
 		print(command)
 		# system(command)

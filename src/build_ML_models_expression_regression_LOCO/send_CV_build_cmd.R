@@ -3,7 +3,7 @@
 library(here)
 library(tidyverse)
 
-fold_ids = read_rds(here('results/single_model_expression_regression_LOLO/CV_split_row_nums.rds'))
+fold_ids = read_rds(here('results/single_model_expression_regression_LOCO/CV_split_row_nums.rds'))
 
 for (this_fold_id in unique(fold_ids)) {
 	job_name = sprintf('CV_%d',this_fold_id)
