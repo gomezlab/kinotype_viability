@@ -16,16 +16,7 @@ parser$add_argument('--feat_num', default = 1500, type="integer")
 
 args = parser$parse_args()
 
-if (file.exists(here('results/single_model_expression_regression_LOCO/CV_split_row_nums.rds'))) {
-	fold_ids = read_rds(here('results/single_model_expression_regression_LOCO/CV_split_row_nums.rds'))
-} else {
-	drug_id_nums = data.frame(drug = unique(PRISM_klaeger_imputed$drug)) %>% 
-		mutate(drug_id_num = 1:n())
-	fold_ids = PRISM_klaeger_imputed %>%
-		left_join(drug_id_nums) %>%
-		pull(drug_id_num)
-	write_rds(fold_ids, here('results/single_model_expression_regression_LOCO/CV_split_row_nums.rds'))
-}
+
 
 fold_ids = read_rds(here('results/single_model_expression_regression_LOCO/CV_split_row_nums.rds'))
 
@@ -48,7 +39,19 @@ PRISM_klaeger_imputed = PRISM_klaeger_imputed %>%
 	filter(depmap_id %in% CCLE_data$DepMap_ID) %>%
 	ungroup()
 
+
 source(here('src/build_ML_models_expression_regression_LOLO/shared_feature_selection_functions.r'))
+
+if (file.exists(here('results/single_model_expression_regression_LOCO/CV_split_row_nums.rds'))) {
+	fold_ids = read_rds(here('results/single_model_expression_regression_LOCO/CV_split_row_nums.rds'))
+} else {
+	drug_id_nums = data.frame(drug = unique(PRISM_klaeger_imputed$drug)) %>% 
+		mutate(drug_id_num = 1:n())
+	fold_ids = PRISM_klaeger_imputed %>%
+		left_join(drug_id_nums) %>%
+		pull(drug_id_num)
+	write_rds(fold_ids, here('results/single_model_expression_regression_LOCO/CV_split_row_nums.rds'))
+}
 
 feature_cor = find_feature_correlations(row_indexes = which(fold_ids != args$CV_fold_ID))
 
