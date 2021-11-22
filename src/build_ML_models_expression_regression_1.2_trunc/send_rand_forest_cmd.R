@@ -5,7 +5,7 @@ library(tidyverse)
 
 fold_ids = read_rds(here('results/single_model_expression_regression_1.2_trunc/CV_split_row_nums.rds'))
 
-for (feature_num in c(1500)) {
+for (feature_num in c(50,100,200,300,400,500,1000,1500,2000,3000,4000,5000)) {
 	for (fold_num in unique(fold_ids)) {
 		
 		job_name = sprintf('RF_%d_%04d',feature_num,fold_num)
