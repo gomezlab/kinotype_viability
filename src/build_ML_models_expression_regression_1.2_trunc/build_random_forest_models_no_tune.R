@@ -96,7 +96,7 @@ rand_forest_wf <- workflow() %>%
 
 model_results <- tune_grid(
 	rand_forest_wf,
-	resamples = viability_CV,
+	resamples = cross_validation_set,
 	control = control_grid(save_pred = TRUE)
 ) %>% write_rds(full_output_file, compress = 'gz')
 
