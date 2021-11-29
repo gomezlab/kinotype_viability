@@ -1,5 +1,10 @@
 #!/usr/bin/env Rscript
 
+# to find all the library commands run:
+#  grep -Rh library * | sort | uniq
+# 
+# then reformat the library calls to use p_load as below, plus dealing with the github only packages
+
 if("pacman" %in% rownames(installed.packages()) == FALSE) {
 	install.packages("pacman")
 }
