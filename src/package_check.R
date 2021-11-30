@@ -38,5 +38,7 @@ p_load(tidyverse)
 p_load(vip)
 p_load(vroom)
 
+p_load(ranger)
+
 p_load_gh('mbergins/BerginskiRMisc')
 p_load_gh('IDG-Kinase/DarkKinaseTools')
