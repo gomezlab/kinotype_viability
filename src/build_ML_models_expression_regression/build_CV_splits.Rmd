@@ -55,6 +55,7 @@ rand_forest_grid <- data.frame(
 ```{r}
 if (! file.exists(here('results/single_model_expression_regression/full_model_data_set_1500feat.rds'))) {
 	all_cor = find_feature_correlations()
+	write_rds(all_cor,here('results/single_model_expression_regression/full_data_cor.rds'))
 	build_regression_viability_set(all_cor,1500) %>%
 		write_rds(here('results/single_model_expression_regression/full_model_data_set_1500feat.rds'), compress='gz')
 }
@@ -108,4 +109,3 @@ for (i in 1:10) {
 	print(paste0("Done with split: ",i))
 }
 toc()
-```
