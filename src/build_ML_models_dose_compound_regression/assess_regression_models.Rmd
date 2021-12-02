@@ -54,7 +54,7 @@ for (feat_count in c(50,100,150,200,300,400,500,1000,1500,2000)) {
 									 fold = i,
 									 trees = 500,
 									 model_type = 'rand_forest',
-									 data_set = "-dose",
+									 data_set = "-dose -compound",
 									 rmse = sqrt(mean((this_cv_data$.pred - this_cv_data$target_viability)^2)),
 									 r2 = glance(summary(lm(this_cv_data$.pred ~ this_cv_data$target_viability)))$r.squared))
 		}
@@ -72,7 +72,7 @@ tic()
 for (feat_count in c(50,100,150,200,300,400,500,1000,1500,2000)) {
 	
 	for (hyper in 1:1) {
-		model_files = Sys.glob(here('results/single_model_dose_regression',
+		model_files = Sys.glob(here('results/single_model_dose_compound_regression',
 																sprintf('rand_forest_param_scan_%dfeat_notune',feat_count),
 																sprintf('hyper%03d*.rds', hyper)))
 		
@@ -97,7 +97,7 @@ for (feat_count in c(50,100,150,200,300,400,500,1000,1500,2000)) {
 									 fold = i,
 									 trees = 500,
 									 model_type = 'rand_forest',
-									 data_set = "+dose",
+									 data_set = "+dose +compound",
 									 rmse = sqrt(mean((this_cv_data$.pred - this_cv_data$target_viability)^2)),
 									 r2 = glance(summary(lm(this_cv_data$.pred ~ this_cv_data$target_viability)))$r.squared))
 		}
@@ -106,6 +106,7 @@ for (feat_count in c(50,100,150,200,300,400,500,1000,1500,2000)) {
 
 toc()
 ```
+
 # Naive Average Model
 
 ```{r}
