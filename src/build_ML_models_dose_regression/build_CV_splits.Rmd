@@ -25,7 +25,7 @@ klaeger_wide = read_rds(here('results/klaeger_full_tidy.rds')) %>%
 	mutate(act_gene_name = paste0("act_",gene_name)) %>%
 	select(-gene_name) %>%
 	pivot_wider(names_from = act_gene_name, values_from = relative_intensity) %>%
-	mutate(act_concentration_M = concentration_M)
+	mutate(act_concentration_M_log = log10(concentration_M))
 
 PRISM_klaeger_imputed = read_rds(here('results/PRISM_klaeger_imputed_tidy.rds'))
 
