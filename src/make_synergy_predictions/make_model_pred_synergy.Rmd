@@ -10,6 +10,7 @@ library(tidyverse)
 library(here)
 library(tidymodels)
 library(tictoc)
+library(furrr)
 
 knitr::opts_knit$set(root.dir = here())
 
@@ -42,12 +43,11 @@ TNBC_lines = sample_info %>%
 	filter(cell_line_name %in% c("SK-BR-3","MCF7","MDA-MB-436","HCC1806",
 															 "MDA-MB-231","BT-474","SUM-149PT","SUM-159PT",
 															 "SUM-229PE"))
+
+NCI_almanac_lines = read_csv(here('data/matched_ALMANAC_cell_lines.csv')) %>%
+	filter(DepMap_ID %in% CCLE_data$DepMap_ID)
+
 toc()
-```
-
-```{r}
-
-
 ```
 
 ```{r}
@@ -98,6 +98,34 @@ for (this_line in TNBC_lines$DepMap_ID) {
 															 	slice(split_lines[[i]]) %>%
 															 	mutate(DepMap_ID = this_line) %>%
 															 	left_join(CCLE_data_filtered) %>%
+															 	mutate(klaeger_conc = NA, imputed_viability = NA,depmap_id = NA,drug=NA))
+		all_pred = c(all_pred,this_prediction$.pred)
+		rm(this_prediction); gc()
+	}
+	
+	klaeger_combo_sets %>%
+		mutate(DepMap_ID = this_line) %>%	
+		select(DepMap_ID,drug_1,drug_2,concentration_M_d1,concentration_M_d2) %>%
+		mutate(via_pred = all_pred) %>%
+		write_rds(here('results/synergy_pred/per_cell_line',paste0(this_line,'.rds')), compress = 'gz')
+}
+
+toc()
+```
+
+```{r}
+tic()
+
+split_lines = splitIndices(dim(klaeger_combo_sets)[1],10)
+
+for (this_line in NCI_almanac_lines$DepMap_ID) {
+	all_pred = c()
+	for (i in 1:length(split_lines)) {
+		this_prediction =  predict(rand_forest_model,
+															 klaeger_combo_sets %>%
+															 	slice(split_lines[[i]]) %>%
+															 	mutate(DepMap_ID = this_line) %>%
+															 	left_join(CCLE_data_filtered, by= "DepMap_ID") %>%
 															 	mutate(klaeger_conc = NA, imputed_viability = NA,depmap_id = NA,drug=NA))
 		all_pred = c(all_pred,this_prediction$.pred)
 		rm(this_prediction); gc()
