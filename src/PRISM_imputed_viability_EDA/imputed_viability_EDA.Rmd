@@ -175,7 +175,7 @@ BerginskiRMisc::trimImage(here('figures/imputed_viability_EDA/example_imputed_vi
 
 ```{r}
 ggplot(imputed_PRISM, aes(x=imputed_viability)) +
-	geom_histogram(breaks = seq(0,2,by=0.05)) +
+	geom_histogram(breaks = seq(0,1,by=0.05)) +
 	labs(x="Imputed Cell Viability", y="Number of Cell Line/Compound\nCombinations") +
 	BerginskiRMisc::theme_berginski()
 ggsave(here('figures/imputed_viability_EDA/full_viability_hist.png'), width=4,height=3)
@@ -237,6 +237,7 @@ ggplot(imputed_PRISM %>%
 	scale_fill_cyclical(values = c("blue", "green")) +
 	BerginskiRMisc::theme_berginski() +
 	coord_flip() +
+	xlim(c(0,1)) +
 	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + 
 	NULL
 
