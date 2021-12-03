@@ -1,0 +1,92 @@
+---
+title: "Compare Correlation and Mutual Information Feature Selection"
+author: "Matthew Berginski"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(ggupset)
+
+knitr::opts_knit$set(root.dir = here())
+```
+
+```{r}
+all_feat_rank = left_join(
+	read_rds(here('results/single_model_expression_regression/full_data_cor.rds')) %>%
+		rename(cor_rank = rank),
+	read_rds(here('results/single_model_expression_regression_MI/all_data_MI_vals.rds')) %>%
+		rename(MI_rank = rank) %>%
+		select(-feature_type)
+)
+
+feat_1500 = all_feat_rank %>%
+	filter(cor_rank <= 1500 | MI_rank <= 1500)
+```
+
+```{r}
+dir.create(here('figures/cor_vs_mutual_info'), showWarnings = F)
+
+upset_data = bind_rows(
+	all_feat_rank %>% 
+		filter(cor_rank <= 1500) %>% 
+		select(feature) %>%
+		mutate(type = "cor"),
+	all_feat_rank %>% 
+		filter(MI_rank <= 1500) %>% 
+		select(feature) %>%
+		mutate(type = "MI")
+) %>% group_by(feature) %>%
+	summarise(select_type = list(type))
+	
+
+upset_sample = upset_data %>% ggplot(aes(x = select_type)) +
+	geom_bar() +
+	scale_x_upset() +
+	labs(x='Feature Types',y="Number of Features") +
+	BerginskiRMisc::theme_berginski()
+
+ggsave(here('figures/cor_vs_mutual_info/sample_1500_feat_overlap.png'),upset_sample)
+BerginskiRMisc::trimImage(here('figures/cor_vs_mutual_info/sample_1500_feat_overlap.png'))
+```
+
+```{r}
+get_overlap <- function(rank_thresh) {
+	feat_filt_count = all_feat_rank %>% 
+		filter(cor_rank <= rank_thresh & MI_rank <= rank_thresh)
+	
+	return(dim(feat_filt_count)[1]/rank_thresh)
+}
+
+overlap = data.frame()
+
+for (i in 1:5000) {
+	overlap = bind_rows(
+		overlap,
+		data.frame(feat_rank = i, percents = get_overlap(i))
+	)
+}
+```
+
+```{r}
+overlap %>% 
+	ggplot(aes(x=feat_rank, y=percents)) + 
+	geom_line() +
+	BerginskiRMisc::theme_berginski() +
+	labs(x="Number of Features Selected", y="Fraction Overlap Between Cor and MI")
+
+ggsave(here('figures/cor_vs_mutual_info/feat_overlap.png'))
+BerginskiRMisc::trimImage(here('figures/cor_vs_mutual_info/feat_overlap.png'))
+
+overlap %>% 
+	filter(feat_rank <= 2000) %>%
+	ggplot(aes(x=feat_rank, y=percents)) + 
+	geom_line() +
+	BerginskiRMisc::theme_berginski() +
+	labs(x="Number of Features Selected", y="Fraction Overlap Between Cor and MI")
+
+ggsave(here('figures/cor_vs_mutual_info/feat_overlap_zoom.png'))
+BerginskiRMisc::trimImage(here('figures/cor_vs_mutual_info/feat_overlap_zoom.png'))
+```
