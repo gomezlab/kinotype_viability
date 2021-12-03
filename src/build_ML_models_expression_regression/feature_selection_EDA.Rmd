@@ -12,6 +12,7 @@ library(tidymodels)
 library(tictoc)
 library(doParallel)
 library(patchwork)
+library(cividis)
 
 knitr::opts_knit$set(root.dir = here())
 ```
@@ -19,8 +20,6 @@ knitr::opts_knit$set(root.dir = here())
 # Load Data
 
 ```{r}
-dir.create(here('results/single_model_expression_regression'), recursive = T)
-
 klaeger_wide = read_rds(here('results/klaeger_full_tidy.rds')) %>%
 	mutate(act_gene_name = paste0("act_",gene_name)) %>%
 	select(-gene_name) %>%
@@ -33,15 +32,13 @@ CCLE_data = read_rds(here('results/single_model/full_CCLE_expression_set_for_ML.
 PRISM_klaeger_imputed = PRISM_klaeger_imputed %>%
 	filter(depmap_id %in% CCLE_data$DepMap_ID) %>%
 	ungroup()
-
-source(here('src/build_ML_models_expression_regression/shared_feature_selection_functions.r'))
 ```
 
 # Assess Full Data Correlations
 
 ```{r}
 tic()
-all_cor = find_feature_correlations()
+all_cor = read_rds(here('results/single_model_expression_regression/full_data_cor.rds'))
 toc()
 
 per_group_rank = all_cor %>%
@@ -65,9 +62,11 @@ all_cor = all_cor %>%
 dir.create(here('figures/feature_selection_expression'))
 
 PRISM_klaeger_samples = PRISM_klaeger_imputed %>%
-	left_join(klaeger_wide %>% select(drug,concentration_M,act_CDK7,act_MAPK1,act_PRKAR2A), by = c('drug'='drug', 'klaeger_conc' = 'concentration_M')) %>%
+	left_join(klaeger_wide %>% select(drug,concentration_M,act_STK10,act_FGR,act_TUFM), 
+						by = c('drug'='drug', 'klaeger_conc' = 'concentration_M')) %>%
 	pivot_longer(contains("act_"), names_to = "act_gene",values_to = "activation") %>%
-	separate(act_gene, into = c("prefix","gene"),sep="_")
+	separate(act_gene, into = c("prefix","gene"),sep="_") %>%
+	mutate(gene = fct_relevel(gene, c("STK10","FGR","TUFM")))
 
 ggplot(PRISM_klaeger_samples, aes(x=activation,y=imputed_viability)) +
 	geom_point(size=0,alpha=0.1) +
@@ -75,7 +74,7 @@ ggplot(PRISM_klaeger_samples, aes(x=activation,y=imputed_viability)) +
 	labs(x="Kinase Activation State",y="Imputed Viability") +
 	BerginskiRMisc::theme_berginski() +
 	theme(aspect.ratio = 1:1) +
-	facet_wrap(~gene, scales = "free")
+	facet_wrap(~gene, scales = "free_x")
 
 ggsave(here('figures/feature_selection_expression/sample_activation_cor.png'),width=6,height=2)
 BerginskiRMisc::trimImage(here('figures/feature_selection_expression/sample_activation_cor.png'))
@@ -87,8 +86,9 @@ activation_hex = ggplot(PRISM_klaeger_samples, aes(x=activation,y=imputed_viabil
 	labs(x="Kinase Activation State",y="Imputed Viability",fill="Log10\nData Points") +
 	BerginskiRMisc::theme_berginski() +
 	theme(aspect.ratio = 1:1, legend.text = element_text(size=8), legend.title = element_text(size=8)) +
+	scale_y_continuous(breaks = seq(0,1,by=0.25)) +
 	scale_fill_viridis_c() +
-	facet_wrap(~gene, scales = "free")
+	facet_wrap(~gene, scales = "free_x")
 
 ggsave(here('figures/feature_selection_expression/sample_activation_cor_hex.png'),width=6,height=2)
 BerginskiRMisc::trimImage(here('figures/feature_selection_expression/sample_activation_cor_hex.png'))
@@ -100,10 +100,10 @@ BerginskiRMisc::trimImage(here('figures/feature_selection_expression/sample_acti
 
 ```{r}
 PRISM_klaeger_samples = PRISM_klaeger_imputed %>%
-	left_join(CCLE_data %>% select(DepMap_ID,exp_MED29,exp_HERC2,exp_CETN1), by=c('depmap_id' = 'DepMap_ID')) %>%
+	left_join(CCLE_data %>% select(DepMap_ID,exp_HAGH,exp_LRFN5,exp_DKC1), by=c('depmap_id' = 'DepMap_ID')) %>%
 	pivot_longer(contains("exp_"), names_to = "exp_gene",values_to = "expression") %>%
 	separate(exp_gene, into = c("prefix","gene"),sep="_") %>%
-	mutate(gene = fct_relevel(gene, c("MED29","HERC2","CETN1")))
+	mutate(gene = fct_relevel(gene, c("HAGH","LRFN5","DKC1")))
 
 ggplot(PRISM_klaeger_samples, aes(x=expression,y=imputed_viability)) +
 	geom_point(size=0,alpha=0.01) +
@@ -123,7 +123,7 @@ expression_hex = ggplot(PRISM_klaeger_samples, aes(x=expression,y=imputed_viabil
 	BerginskiRMisc::theme_berginski() +
 	theme(aspect.ratio = 1:1, legend.text = element_text(size=8), legend.title = element_text(size=8)) +
 	scale_fill_viridis_c() +
-	facet_wrap(~gene, scales = "free")
+	facet_wrap(~gene, scales = "free_x")
 
 ggsave(here('figures/feature_selection_expression/sample_expression_cor_hex.png'),width=6,height=2)
 BerginskiRMisc::trimImage(here('figures/feature_selection_expression/sample_expression_cor_hex.png'))
@@ -164,10 +164,10 @@ per_rank = ggplot(all_cor, aes(x=rank,y=sub_percent_rank,color=feature_type)) +
 ggsave(here('figures/feature_selection_expression/group_perc_rank.png'),width=6*0.75,height=5*0.75)
 BerginskiRMisc::trimImage(here('figures/feature_selection_expression/group_perc_rank.png'))
 
-per_rank_zoom = ggplot(all_cor %>% filter(rank <= 5500), aes(x=rank,y=sub_percent_rank,color=feature_type)) +
+per_rank_zoom = ggplot(all_cor %>% filter(rank <= 2000), aes(x=rank,y=sub_percent_rank,color=feature_type)) +
 	geom_line(size=1.5) +
 	labs(x="Overall Correlation Rank",y="Percentile Rank within Feature", color='') +
-	scale_x_continuous(breaks=seq(0,4000,by=2000)) +
+	scale_x_continuous(breaks=seq(0,2000,by=500)) +
 	theme(legend.position = "none", aspect.ratio = 1:1) +
 	BerginskiRMisc::theme_berginski()
 ggsave(here('figures/feature_selection_expression/group_perc_rank_zoom.png'),width=6*0.75,height=5*0.75)
@@ -193,10 +193,10 @@ ggsave(here('figures/feature_selection_expression/selection_order_full.png'),
 BerginskiRMisc::trimImage(here('figures/feature_selection_expression/selection_order_full.png'))
 
 
-rank_zoom = ggplot(all_cor %>% filter(rank <= 5500), aes(x=rank,y=sub_rank,color=feature_type)) +
+rank_zoom = ggplot(all_cor %>% filter(rank <= 2000), aes(x=rank,y=sub_rank,color=feature_type)) +
 	geom_line(size=1.5) +
 	labs(x="Overall Correlation Rank",y="Number of Features", color='') +
-	scale_x_continuous(breaks=seq(0,4000,by=2000)) +
+	scale_x_continuous(breaks=seq(0,2000,by=500)) +
 	theme(legend.position = "none", aspect.ratio = 1:1) +
 	BerginskiRMisc::theme_berginski()
 ggsave(here('figures/feature_selection_expression/group_rank_count_zoom.png'),width=6*0.75,height=5*0.75)
@@ -283,7 +283,12 @@ ggsave(here('figures/feature_selection_expression/activation_cor_vs_sd.png'))
 # Build Cross Validation Data Figures
 
 ```{r}
-feature_cor_sets = read_rds(here('results/single_model_expression_regression/CV_set_correlations.rds'))
+feature_cor_sets = list()
+i = 1
+for (feat_cor_set_file in Sys.glob(here('results/single_model_expression_regression/CV_feature_cors/*'))) {
+	feature_cor_sets[[i]] = read_rds(feat_cor_set_file)
+	i = i + 1
+}
 
 all_cor_cv_sets = data.frame()
 for (i in 1:10) {
