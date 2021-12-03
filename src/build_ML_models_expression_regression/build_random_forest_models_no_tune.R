@@ -10,24 +10,25 @@ library(argparse)
 tic()
 
 parser <- ArgumentParser(description='Process input paramters')
-parser$add_argument('--feature_num', default = 1500, type="integer")
+parser$add_argument('--feature_num', default = 100, type="integer")
 parser$add_argument('--CV_fold_ID', default = 1, type="integer")
 
 args = parser$parse_args()
 print(sprintf('Fold: %02d',args$CV_fold_ID))
 
 dir.create(here('results/single_model_expression_regression/', 
-								sprintf('rand_forest_%dfeat_notune/',args$feature_num)), showWarnings = F)
+								sprintf('rand_forest/%dfeat_notune/',args$feature_num)), 
+					 showWarnings = F, recursive = T)
 
 full_output_file = here('results/single_model_expression_regression/', 
-									 sprintf('rand_forest_%dfeat_notune/',args$feature_num),
+									 sprintf('rand_forest/%dfeat_notune/',args$feature_num),
 									 sprintf('fold%04d_test.rds',args$CV_fold_ID))
 
 dir.create(here('results/single_model_expression_regression/', 
-								sprintf('rand_forest_%dfeat_notune_pred/',args$feature_num)), showWarnings = F)
+								sprintf('rand_forest/%dfeat_notune_pred/',args$feature_num)), showWarnings = F)
 
 pred_output_file = here('results/single_model_expression_regression/', 
-									 sprintf('rand_forest_%dfeat_notune_pred/',args$feature_num),
+									 sprintf('rand_forest/%dfeat_notune_pred/',args$feature_num),
 									 sprintf('fold%04d_test.rds',args$CV_fold_ID))
 
 feature_cor = read_rds(here('results/single_model_expression_regression/CV_feature_cors/',
