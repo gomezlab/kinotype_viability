@@ -17,6 +17,10 @@ knitr::opts_knit$set(root.dir = here())
 
 ```{r}
 final_model <- read_rds(here('results/single_model_expression_regression/final_model_1500feat.rds'))
+
+gene_classifications = read_csv(here('data/KlaegerScience2017/manual_gene_labels.csv')) %>%
+	bind_rows(all_kinases %>% select(symbol,class) %>% rename(gene_name = symbol)) %>% 
+	distinct()
 ```
 
 ```{r}
@@ -30,7 +34,7 @@ all_importance = vi(final_model %>% extract_fit_parsnip()) %>%
 			T ~ Variable
 		)) %>%
 	extract(Variable, c(NA,"gene"),"(.*)_(.*)",remove=F) %>%
-	left_join(all_kinases %>% select(symbol,class), by=c('gene'='symbol')) %>%
+	left_join(gene_classifications, by=c('gene'='gene_name')) %>%
 	mutate(class = ifelse(is.na(class), "Non-kinase",class)) %>%
 	arrange(Importance) %>%
 	mutate(Variable = fct_inorder(Variable))
@@ -41,7 +45,7 @@ ggplot(all_importance %>% slice_tail(n = 25),
 	labs(y='',fill='',x='Feature Importance') +
 	BerginskiRMisc::theme_berginski() +
 	theme(legend.justification = c(1, 0), legend.position = c(1, 0))
-ggsave(here('figures/single_model_expression/top_25_VIP.png'),width=6.5,height=3.75)
+ggsave(here('figures/single_model_expression/top_25_VIP.png'),width=3.5,height=3.75)
 BerginskiRMisc::trimImage(here('figures/single_model_expression/top_25_VIP.png'))
 
 ggplot(all_importance %>% 
@@ -51,7 +55,7 @@ ggplot(all_importance %>%
 	geom_col() +
 	labs(y='',fill='',x='Feature Importance') +
 	BerginskiRMisc::theme_berginski()
-ggsave(here('figures/single_model_expression/top_25_exp_VIP.png'),width=6.5,height=3.75)
+ggsave(here('figures/single_model_expression/top_25_exp_VIP.png'),width=3.5,height=3.75)
 BerginskiRMisc::trimImage(here('figures/single_model_expression/top_25_exp_VIP.png'))
 ```
 
@@ -60,6 +64,6 @@ ggplot(all_importance, aes(x=feature_type,y=Importance)) +
 	geom_boxplot() +
 	labs(x='',y='Feature Importance') +
 	BerginskiRMisc::theme_berginski()
-ggsave(here('figures/single_model_expression/importance_box.png'),width=2,height=2.5)
+ggsave(here('figures/single_model_expression/importance_box.png'),width=2,height=4.5)
 BerginskiRMisc::trimImage(here('figures/single_model_expression/importance_box.png'))
 ```

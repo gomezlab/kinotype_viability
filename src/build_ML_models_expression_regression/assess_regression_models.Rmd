@@ -14,6 +14,7 @@ library(patchwork)
 library(tictoc)
 library(broom)
 library(gghighlight)
+library(Metrics)
 
 knitr::opts_knit$set(root.dir = here())
 model_results = data.frame()
@@ -21,7 +22,6 @@ all_pred = data.frame()
 ```
 
 # Rand Forest Model Assessment
-
 
 ```{r}
 # tic()
@@ -193,6 +193,35 @@ for (feat_count in c(200,500,1000,1500)) {
 toc()
 ```
 
+# Naive Average Model
+
+```{r}
+fold_ids = read_rds(here('results/single_model_expression_regression/CV_split_row_nums.rds'))
+
+imputed_via = read_rds(here('results/single_model_exp_only_regression/full_model_data_set_1500feat.rds')) %>%
+	select(depmap_id, drug, klaeger_conc,imputed_viability)
+
+CV_aver_eff = data.frame()
+
+for (this_fold_id in unique(fold_ids)) {
+	aver_eff = imputed_via %>% 
+		slice(which(fold_ids != this_fold_id)) %>%
+		group_by(drug,klaeger_conc) %>%
+		summarise(aver_via = mean(imputed_viability)) %>%
+		ungroup()
+	
+	CV_aver_eff = bind_rows(
+		CV_aver_eff,
+		imputed_via %>%
+			slice(which(fold_ids == this_fold_id)) %>%
+			left_join(aver_eff)
+	)
+}
+
+naive_average_r2 = cor(CV_aver_eff$imputed_viability,CV_aver_eff$aver_via)^2
+naive_average_rmse = rmse(CV_aver_eff$imputed_viability,CV_aver_eff$aver_via)
+```
+
 # NN Model Assessment
 
 ```{r}
@@ -249,7 +278,7 @@ model_summary = model_results %>%
 		model_type == "lin" ~ "Linear Regresssion"
 	)) %>%
 	select(model_type,feat_count,trees,r2_estimate,rmse_estimate,everything())
-		
+
 
 single_pred_set = all_pred %>% 
 	filter(model_type == "rand_forest", trees == 500, feat_count == 1500) %>% 
@@ -259,6 +288,7 @@ single_pred_set = all_pred %>%
 	))
 
 worst_rmse = sqrt(mean((single_pred_set$worst_pred - single_pred_set$target_viability)^2))
+notifysendR::notify_send("done with data reading")
 ```
 
 # Figures
@@ -269,7 +299,8 @@ dir.create(here('figures/single_model_expression'), recursive = T)
 r2_plot = ggplot(model_summary %>% 
 								 	filter(trees == 500 | is.na(trees), 
 								 				 feat_count %in% c(200,500,1000,1500)), 
-			 aes(y=r2_estimate,x=feat_count, color=model_type_FN, shape=model_type_FN)) + 
+								 aes(y=r2_estimate,x=feat_count, color=model_type_FN, shape=model_type_FN)) + 
+	geom_hline(aes(yintercept = naive_average_r2), linetype = 2, alpha = 0.5) +
 	geom_point(size=2) + 
 	# geom_errorbar(aes(ymin=r2_conf.low,ymax=r2_conf.high)) +
 	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
@@ -278,9 +309,10 @@ r2_plot = ggplot(model_summary %>%
 	BerginskiRMisc::theme_berginski()
 
 rmse_plot = ggplot(model_summary %>% 
-								 	filter(trees == 500 | is.na(trees), 
-								 				 feat_count %in% c(200,500,1000,1500)), 
-			 aes(y=rmse_estimate,x=feat_count, color=model_type_FN, shape=model_type_FN)) + 
+									 	filter(trees == 500 | is.na(trees), 
+									 				 feat_count %in% c(200,500,1000,1500)), 
+									 aes(y=rmse_estimate,x=feat_count, color=model_type_FN, shape=model_type_FN)) + 
+	geom_hline(aes(yintercept = naive_average_rmse), linetype = 2, alpha = 0.5) +
 	geom_point(size=2) + 
 	# geom_errorbar(aes(ymin=rmse_conf.low,ymax=rmse_conf.high)) +
 	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
@@ -301,17 +333,19 @@ dir.create(here('figures/single_model_expression'), recursive = T)
 
 r2_plot = ggplot(model_summary %>% 
 								 	filter(trees == 500, model_type == "rand_forest"), 
-			 aes(y=r2_estimate,x=feat_count)) + 
+								 aes(y=r2_estimate,x=feat_count)) + 
+	geom_hline(aes(yintercept = naive_average_r2), linetype = 2, alpha = 0.5) +
 	geom_point() + 
 	# geom_errorbar(aes(ymin=r2_conf.low,ymax=r2_conf.high)) +
 	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
 	labs(x="Number of Features",y="R\u00B2") +
-  gghighlight(feat_count == 1500) +
+	gghighlight(feat_count == 1500) +
 	BerginskiRMisc::theme_berginski()
 
 rmse_plot = ggplot(model_summary %>% 
-								 	filter(trees == 500, model_type == "rand_forest"), 
-			 aes(y=rmse_estimate,x=feat_count)) + 
+									 	filter(trees == 500, model_type == "rand_forest"), 
+									 aes(y=rmse_estimate,x=feat_count)) + 
+	geom_hline(aes(yintercept = naive_average_rmse), linetype = 2, alpha = 0.5) +
 	geom_point() + 
 	# geom_errorbar(aes(ymin=rmse_conf.low,ymax=rmse_conf.high)) +
 	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
@@ -330,7 +364,7 @@ dir.create(here('figures/single_model_expression'), recursive = T)
 
 r2_plot = ggplot(model_summary %>% 
 								 	filter(feat_count %in% c(500,1000,1500,2000), model_type == "rand_forest"), 
-			 aes(y=r2_estimate,x=as.factor(feat_count), color=as.factor(trees))) + 
+								 aes(y=r2_estimate,x=as.factor(feat_count), color=as.factor(trees))) + 
 	geom_point(position=position_dodge(width=0.5)) + 
 	geom_errorbar(aes(ymin=r2_conf.low,ymax=r2_conf.high),
 								position=position_dodge(width=0.5)) +
@@ -339,8 +373,8 @@ r2_plot = ggplot(model_summary %>%
 	BerginskiRMisc::theme_berginski()
 
 rmse_plot = ggplot(model_summary %>% 
-								 	filter(feat_count %in% c(500,1000,1500,2000), model_type == "rand_forest"),
-			 aes(y=rmse_estimate,x=as.factor(feat_count), color=as.factor(trees))) + 
+									 	filter(feat_count %in% c(500,1000,1500,2000), model_type == "rand_forest"),
+									 aes(y=rmse_estimate,x=as.factor(feat_count), color=as.factor(trees))) + 
 	geom_point(position=position_dodge(width=0.5)) +
 	geom_errorbar(aes(ymin=rmse_conf.low,ymax=rmse_conf.high),
 								position=position_dodge(width=0.5)) +
@@ -350,13 +384,14 @@ rmse_plot = ggplot(model_summary %>%
 
 ggsave(here('figures/single_model_expression/rand_forest_tree_count.png'),r2_plot + rmse_plot,width=8,height=4)
 BerginskiRMisc::trimImage(here('figures/single_model_expression/rand_forest_tree_count.png'))
+
 ```
 
 
 ```{r}
 best_pred = all_pred %>%
 	filter(model_type == "rand_forest", feat_count == 1500, trees == 500) %>%
-	mutate(viability_binned = cut(best_pred$target_viability,
+	mutate(viability_binned = cut(target_viability,
 																seq(0,2,by=0.05),
 																include.lowest = T))
 
@@ -364,17 +399,24 @@ binned_summary = best_pred %>%
 	group_by(viability_binned) %>%
 	summarise(median_via = median(target_viability))
 
+best_model_summary = model_summary %>% 
+	filter(model_type == "rand_forest", feat_count == 1500, trees == 500)
+
+summary_text = paste0("R\u00B2: ",signif(best_model_summary$r2_estimate,3), "\n",
+											"RMSE: ",signif(best_model_summary$rmse_estimate,3))
+
 ggplot(best_pred, aes(x=target_viability,y=.pred)) +
 	stat_binhex(aes(fill=log10(..count..))) +
 	geom_abline(slope = 1, intercept = 0, color='black', alpha=0.5, linetype = 2) +
 	geom_smooth(color = 'red') +
 	scale_fill_viridis_c() +
 	labs(x="Actual Imputed Viability", y="Predicted Viability",fill="Log10\n# Values") +
+	geom_text(aes(x=-Inf,y=Inf,hjust=-0.1,vjust=1,label=summary_text), size=3.5, color='blue') +
 	BerginskiRMisc::theme_berginski() +
 	xlim(c(0,2)) + ylim(c(0,2)) +
 	theme(aspect.ratio = 1:1, legend.margin=margin(0,0,0,0), legend.box.margin=margin(-10,-5,-10,-10))
 
-ggsave(here('figures/single_model_expression/viability_vs_pred_best_hex.png'),heigh=3,width=3)
+ggsave(here('figures/single_model_expression/viability_vs_pred_best_hex.png'),height=3,width=3)
 BerginskiRMisc::trimImage(here('figures/single_model_expression/viability_vs_pred_best_hex.png'))
 
 ggplot(best_pred, aes(x=viability_binned,y=.pred)) +
@@ -382,6 +424,7 @@ ggplot(best_pred, aes(x=viability_binned,y=.pred)) +
 	geom_point(data = binned_summary, aes(x=viability_binned,y=median_via), color = 'blue') +
 	labs(x="Binned Viability Ranges", y="Predicted Viability") +
 	BerginskiRMisc::theme_berginski() +
+	geom_text(aes(x=-Inf,y=Inf,hjust=0,vjust=1,label=summary_text)) +
 	# xlim(c(0,2)) + ylim(c(0,2)) +
 	theme(aspect.ratio = 1:1) +
 	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))

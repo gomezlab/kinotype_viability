@@ -18,6 +18,8 @@ compound_match_list = read_csv(here('src/data_organization/find_PRISM_klaeger_ma
 
 klaeger_tidy = read_rds(here('results/klaeger_full_tidy.rds'))
 
+response_curve_parameters_full = vroom(here('data/PRISM/secondary/secondary-screen-dose-response-curve-parameters.csv'))
+
 response_curve_parameters = vroom(here('data/PRISM/secondary/secondary-screen-dose-response-curve-parameters.csv')) %>%
 	#Filter only to compounds that match the Klaeger list and to cell lines that
 	#passed STR profiling
@@ -31,13 +33,15 @@ The fitting methods used an R package named drc, which is described in this pape
 https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0146021#pone.0146021.e008
 
 ```{r}
-broad_id_klaeger_conc = crossing(compound_match_list$broad_id, unique(klaeger_tidy$concentration_M))
-names(broad_id_klaeger_conc) <- c('broad_id','klaeger_conc')
+broad_id_klaeger_conc = crossing('broad_id' = compound_match_list$broad_id, 
+																 'klaeger_conc' = unique(klaeger_tidy$concentration_M))
+
 broad_id_klaeger_conc = broad_id_klaeger_conc %>%
 	filter(klaeger_conc != 0)
 
-klaeger_viability = response_curve_parameters %>%
+response_curve_parameters %>%
 	left_join(broad_id_klaeger_conc) %>%
+	# filter(lower_limit <= 1.2) %>%
 	#These curves seem to be originally fit in uM concentrations, so we'll convert
 	#the M concentration values to uM
 	mutate(imputed_viability = lower_limit + (upper_limit - lower_limit)/(1 + exp(slope * (log(klaeger_conc*10^6) - log(ec50))))) %>%
@@ -45,13 +49,55 @@ klaeger_viability = response_curve_parameters %>%
 	left_join(compound_match_list %>% select(broad_id,drug)) %>%
 	group_by(depmap_id, drug, klaeger_conc) %>%
 	summarise(imputed_viability = mean(imputed_viability)) %>%
-	mutate(imputed_viability = case_when(
+	write_rds(here('results/PRISM_klaeger_imputed_tidy_nofilt.rds'), compress = 'gz')
+
+#Filtering data to remove lower limit values above 1.0
+response_curve_parameters %>%
+	left_join(broad_id_klaeger_conc) %>%
+	filter(lower_limit <= 1) %>%
+	#These curves seem to be originally fit in uM concentrations, so we'll convert
+	#the M concentration values to uM
+	mutate(imputed_viability = lower_limit + (upper_limit - lower_limit)/(1 + exp(slope * (log(klaeger_conc*10^6) - log(ec50))))) %>%
+	select(broad_id,depmap_id,klaeger_conc,imputed_viability) %>%
+	left_join(compound_match_list %>% select(broad_id,drug)) %>%
+	group_by(depmap_id, drug, klaeger_conc) %>%
+	summarise(imputed_viability = mean(imputed_viability)) %>%
+		mutate(imputed_viability = case_when(
 		imputed_viability < 0 ~ 0,
-		imputed_viability > 2 ~ 2,
 		TRUE ~ imputed_viability
 	)) %>%
 	write_rds(here('results/PRISM_klaeger_imputed_tidy.rds'), compress = 'gz')
 ```
 
+```{r}
+klaeger_viability_no_filt = response_curve_parameters %>%
+	left_join(broad_id_klaeger_conc) %>%
 
+	#These curves seem to be originally fit in uM concentrations, so we'll convert
+	#the M concentration values to uM
+	mutate(imputed_viability = lower_limit + (upper_limit - lower_limit)/(1 + exp(slope * (log(klaeger_conc*10^6) - log(ec50))))) %>%
+	select(broad_id,depmap_id,klaeger_conc,imputed_viability) %>%
+	left_join(compound_match_list %>% select(broad_id,drug)) %>%
+	group_by(depmap_id, drug, klaeger_conc) %>%
+	summarise(imputed_viability = mean(imputed_viability)) %>%
+	identity()
 
+sample_info = read_csv(here('data/CCLE_data/sample_info.csv.gz')) %>%
+	mutate(cell_line_name_extra = paste0(cell_line_name, "\n",lineage_subtype, "\n",lineage_sub_subtype))
+
+avail_lines = sample_info %>% 
+	filter(cell_line_name %in% c("SK-BR-3","MCF7","MDA-MB-468","HCC1806",
+															 "MDA-MB-231","BT-474","SUM-149PT","SUM-159PT",
+															 "SUM-229PE"))
+
+TNBC_imputed_no_filt = klaeger_viability_no_filt %>%
+	filter(depmap_id %in% avail_lines$DepMap_ID)
+
+TNBC_summary = TNBC_imputed_no_filt %>%
+	group_by(depmap_id, drug) %>%
+	summarise(via_above_1.2 = mean(imputed_viability > 1.2),
+						mean_via = mean(imputed_viability)) %>%
+	left_join(avail_lines %>% select(DepMap_ID, cell_line_name), by=c('depmap_id'='DepMap_ID')) %>%
+	arrange(desc(via_above_1.2)) %>%
+	write_csv(here('TNBC_no_filter_imputed_viability.csv'))
+```

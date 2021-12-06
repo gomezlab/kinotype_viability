@@ -26,7 +26,7 @@ klaeger_wide = read_rds(here('results/klaeger_full_tidy.rds')) %>%
 	pivot_wider(names_from = act_gene_name, values_from = relative_intensity)
 
 PRISM_klaeger_imputed = read_rds(here('results/PRISM_klaeger_imputed_tidy.rds'))
-print(length(unique(PRISM_klaeger_imputed$depmap_id)))
+PRISM_IDs = unique(PRISM_klaeger_imputed$depmap_id)
 
 depmap_data = read_rds(here('results/single_model/full_depmap_for_ML.rds'))
 
@@ -44,6 +44,43 @@ PRISM_klaeger_imputed = PRISM_klaeger_imputed %>%
 	filter(depmap_id %in% CNV_data$DepMap_ID) %>%
 	filter(depmap_id %in% proteomics_data$DepMap_ID) %>%
 	ungroup()
+```
+
+```{r}
+duplicated_prot = proteomics_data %>% 
+	filter(DepMap_ID == "ACH-000212" | DepMap_ID == "ACH-000680" | DepMap_ID == "ACH-000997")
+
+all_ids_temp = data.frame(data_source = "PRISM",depmap_id = PRISM_IDs) %>%
+	add_row(depmap_id = depmap_data %>% filter(DepMap_ID %in% PRISM_IDs) %>% pull(DepMap_ID),
+					data_source = "DepMap") %>%
+	add_row(depmap_id = CCLE_data %>% filter(DepMap_ID %in% PRISM_IDs) %>% pull(DepMap_ID),
+					data_source = "Gene Exp") %>%
+	add_row(depmap_id = CNV_data %>% filter(DepMap_ID %in% PRISM_IDs) %>% pull(DepMap_ID),
+					data_source = "CNV") %>%
+	add_row(depmap_id = proteomics_data %>% filter(DepMap_ID %in% PRISM_IDs) %>% pull(DepMap_ID) %>% unique(),
+					data_source = "Proteomics") 
+
+all_ids = all_ids_temp %>%
+	group_by(depmap_id) %>%
+	summarize(data_sources = list(as.factor(data_source)))
+
+upset_plot = all_ids %>% 
+	ggplot(aes(x=data_sources)) + 
+	geom_bar() + 
+	scale_x_upset(n_intersections = 10000) +
+	labs(x="", y="Number of Cell Lines") +
+	BerginskiRMisc::theme_berginski()
+
+ggsave(here('figures/single_model_all_data_regression/cell_line_overlap_upset.png'),
+			 upset_plot, height=5,width=5)
+BerginskiRMisc::trimImage(here('figures/single_model_all_data_regression/cell_line_overlap_upset.png'))
+
+# all_ids = data.frame(
+# 	data_source = "PRISM", depmap_ids = list(c(PRISM_IDs))
+# ) 
+# %>%
+# 	add_row(data_source = "DepMap", depmap_ids = list(c(depmap_data %>% filter(DepMap_ID %in% PRISM_IDs) %>% pull(DepMap_ID) %>% unique())))
+
 ```
 
 ```{r}

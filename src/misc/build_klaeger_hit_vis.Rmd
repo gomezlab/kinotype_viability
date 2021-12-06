@@ -1,0 +1,47 @@
+---
+title: "Build Klaeger Compound Hit Visualizations"
+author: "Matthew Berginski"
+date: "11/11/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+
+knitr::opts_knit$set(root.dir = here())
+```
+
+```{r}
+klaeger_full_tidy <- read_rds(here("results/klaeger_full_tidy.rds"))
+```
+
+```{r}
+dir.create(here('figures/klaeger_visualizations/by_compound'), recursive = T, showWarnings = F)
+for (this_drug in unique(klaeger_full_tidy$drug)) {
+	this_data = klaeger_full_tidy %>%
+		filter(drug == this_drug)
+	
+	gene_hits = this_data %>% 
+		filter(relative_intensity != 1) %>%
+		pull(gene_name) %>%
+		unique()
+	
+	this_data = this_data %>%
+		filter(gene_name %in% gene_hits)
+	
+	num_genes = length(unique(this_data$gene_name))
+	print(num_genes)
+	
+	this_data %>% ggplot(aes(x=log10(concentration_M), y=relative_intensity, color=gene_name)) +
+		geom_hline(aes(yintercept = 1), linetype = 2, alpha=0.5) +
+		geom_point() +
+		geom_line() +
+		BerginskiRMisc::theme_berginski() +
+		ggtitle(num_genes) +		
+		theme(aspect.ratio = 1:1)
+	
+	ggsave(here('figures/klaeger_visualizations/by_compound',paste0(this_drug,".png")), width=10)
+	BerginskiRMisc::trimImage(here('figures/klaeger_visualizations/by_compound',paste0(this_drug,".png")))
+}
+```

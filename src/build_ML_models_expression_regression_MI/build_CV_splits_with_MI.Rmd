@@ -39,9 +39,10 @@ source(here('src/build_ML_models_expression_regression_MI//shared_feature_select
 ```
 
 ```{r}
-# tic()
-# all_MI_vals = find_feature_MI()
-# toc()
+tic()
+all_MI_vals = find_feature_MI()
+write_rds(all_MI_vals,here('results/single_model_expression_regression_MI/all_data_MI_vals.rds'))
+toc()
 ```
 
 ```{r}

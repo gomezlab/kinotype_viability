@@ -9,12 +9,8 @@ output: github_document
 library(tidyverse)
 library(here)
 library(tidymodels)
-library(ROCR)
 library(patchwork)
 library(tictoc)
-library(broom)
-library(gghighlight)
-library(Metrics)
 
 knitr::opts_knit$set(root.dir = here())
 model_results = data.frame()
@@ -23,60 +19,18 @@ all_pred = data.frame()
 
 # Rand Forest Model Assessment
 
+
 ```{r}
 tic()
 
-for (feat_count in c(50,100,150,200,300,400,500,1000,1500,2000)) {
+for (feat_count in c(50,100,150,200,300,400,500)) {
 	
 	for (hyper in 1:1) {
 		model_files = Sys.glob(here('results/single_model_expression_regression',
 																sprintf('rand_forest_param_scan_%dfeat_notune',feat_count),
 																sprintf('hyper%03d*.rds', hyper)))
 		
-		# if (length(model_files) != 10) {
-		# 	next;
-		# }
-		
-		for (i in 1:length(model_files)) {
-			this_cv_data = read_rds(model_files[i]) %>%
-				collect_predictions()
-			
-			all_pred = bind_rows(
-				all_pred,
-				this_cv_data %>% mutate(feat_count = feat_count, 
-																trees = 500, 
-																model_type = 'rand_forest')
-			)
-			
-			model_results = bind_rows(
-				model_results,
-				data.frame(feat_count = feat_count,
-									 fold = i,
-									 trees = 500,
-									 model_type = 'rand_forest',
-									 data_set = "-dose",
-									 rmse = sqrt(mean((this_cv_data$.pred - this_cv_data$target_viability)^2)),
-									 r2 = glance(summary(lm(this_cv_data$.pred ~ this_cv_data$target_viability)))$r.squared))
-		}
-	}
-	
-}
-
-toc()
-```
-
-
-```{r}
-tic()
-
-for (feat_count in c(50,100,150,200,300,400,500,1000,1500,2000)) {
-	
-	for (hyper in 1:1) {
-		model_files = Sys.glob(here('results/single_model_dose_regression',
-																sprintf('rand_forest_param_scan_%dfeat_notune',feat_count),
-																sprintf('hyper%03d*.rds', hyper)))
-		
-		if (length(model_files) == 0) {
+		if (length(model_files) != 10) {
 			next;
 		}
 		
@@ -94,83 +48,99 @@ for (feat_count in c(50,100,150,200,300,400,500,1000,1500,2000)) {
 			model_results = bind_rows(
 				model_results,
 				data.frame(feat_count = feat_count,
-									 fold = i,
+									 hyper = i,
 									 trees = 500,
 									 model_type = 'rand_forest',
-									 data_set = "+dose",
 									 rmse = sqrt(mean((this_cv_data$.pred - this_cv_data$target_viability)^2)),
-									 r2 = glance(summary(lm(this_cv_data$.pred ~ this_cv_data$target_viability)))$r.squared))
+									 r2 = glance(summary(lm(this_cv_data$.pred ~ this_cv_data$target_viability)))$r.squared,
+									 data_set = "exp"))
 		}
 	}
+	
 }
 
 toc()
 ```
-# Naive Average Model
 
 ```{r}
-PRISM_klaeger_imputed_tidy <- read_rds(here("results/PRISM_klaeger_imputed_tidy.rds"))
+tic()
 
-aver_eff = PRISM_klaeger_imputed_tidy %>% 
-	group_by(drug,klaeger_conc) %>%
-	summarise(aver_via = mean(imputed_viability))
+for (feat_count in c(seq(50,450,by=50))) {
+	
+	for (hyper in 1:1) {
+		model_files = Sys.glob(here('results/single_model_act_only_regression/',
+																sprintf('rand_forest_param_scan_%dfeat_notune',feat_count),
+																sprintf('hyper%03d*.rds', hyper)))
+		
+		if (length(model_files) != 10) {
+			next;
+		}
+		
+		for (i in 1:length(model_files)) {
+			this_cv_data = read_rds(model_files[i]) %>%
+				collect_predictions()
+			
+			all_pred = bind_rows(
+				all_pred,
+				this_cv_data %>% mutate(feat_count = feat_count, 
+																trees = 500, 
+																model_type = 'rand_forest')
+			)
+			
+			model_results = bind_rows(
+				model_results,
+				data.frame(feat_count = feat_count,
+									 hyper = i,
+									 trees = 500,
+									 model_type = 'rand_forest',
+									 rmse = sqrt(mean((this_cv_data$.pred - this_cv_data$target_viability)^2)),
+									 r2 = glance(summary(lm(this_cv_data$.pred ~ this_cv_data$target_viability)))$r.squared,
+									 data_set = "act"))
+		}
+	}
+	
+}
 
-PRISM_klaeger_imputed_tidy = PRISM_klaeger_imputed_tidy %>%
-	left_join(aver_eff)
-
-naive_average_r2 = cor(PRISM_klaeger_imputed_tidy$imputed_viability,PRISM_klaeger_imputed_tidy$aver_via)^2
-naive_average_rmse = rmse(PRISM_klaeger_imputed_tidy$imputed_viability,PRISM_klaeger_imputed_tidy$aver_via)
+toc()
 ```
-
 
 ```{r}
 model_summary = model_results %>% 
-	group_by(feat_count,trees,data_set) %>% 
+	group_by(feat_count,trees,model_type,data_set) %>% 
 	nest() %>%
 	mutate(rmse = map(data, ~ tidy(t.test(.x$rmse)))) %>%
 	mutate(r2 = map(data, ~ tidy(t.test(.x$r2)))) %>%
 	unnest(cols=c(rmse,r2),names_sep = "_") %>%
-	select(feat_count,data_set,trees,r2_estimate,rmse_estimate,everything())
-		
-
-single_pred_set = all_pred %>% 
-	filter(model_type == "rand_forest", trees == 500, feat_count == 1500) %>% 
-	mutate(worst_pred = case_when(
-		target_viability <= 1 ~ 0,
-		T ~ 2
-	))
-
-worst_rmse = sqrt(mean((single_pred_set$worst_pred - single_pred_set$target_viability)^2))
-notifysendR::notify_send("done with data reading")
+	mutate(data_set_FN = case_when(
+		data_set == "exp" ~ "Activation and Expression",
+		data_set == "act" ~ "Only Activation"
+	)) %>%
+	select(model_type,feat_count,trees,r2_estimate,rmse_estimate,everything())
 ```
 
-# Figures
 
 ```{r}
-dir.create(here('figures/single_model_expression'), recursive = T)
-
-r2_plot = model_summary %>% ggplot(aes(y=r2_estimate,x=feat_count, color=data_set, shape=data_set)) +
-	geom_hline(aes(yintercept = naive_average_r2), linetype = 2, alpha = 0.5) +
-	geom_point(size=2) +
-	geom_line() +
+r2_plot = ggplot(model_summary, 
+			 aes(y=r2_estimate,x=feat_count, color=data_set_FN, shape=data_set_FN)) + 
+	geom_point(alpha=0.8) + 
 	# geom_errorbar(aes(ymin=r2_conf.low,ymax=r2_conf.high)) +
 	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
 	labs(x="Number of Features",y="R\u00B2", color="",shape="") +
 	BerginskiRMisc::theme_berginski()
 
-rmse_plot = model_summary %>% ggplot(aes(y=rmse_estimate,x=feat_count, color=data_set, shape=data_set)) +
-	geom_hline(aes(yintercept = naive_average_rmse), linetype = 2, alpha = 0.5) +
-	geom_point(size=2) +
-	geom_line() +
+rmse_plot = ggplot(model_summary, 
+			 aes(y=rmse_estimate,x=feat_count, color=data_set_FN, shape=data_set_FN)) + 
+	geom_point(alpha=0.8) + 
 	# geom_errorbar(aes(ymin=rmse_conf.low,ymax=rmse_conf.high)) +
 	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
 	labs(x="Number of Features",y="RMSE",color="",shape="") +
 	BerginskiRMisc::theme_berginski()
 
-ggsave(here('figures/single_model_expression/model_comparison_with_dose.png'),
+ggsave(here('figures/single_model_expression/model_comparison_act_only.png'),
 			 r2_plot + rmse_plot +
-			 	plot_layout(guides = "collect") &
+			 	plot_layout(guides = "collect") & 
 			 	theme(legend.position = 'bottom', legend.margin=margin(0,0,0,0), legend.box.margin=margin(-10,-10,-10,-10)),
 			 width=6*0.8,height=3*0.8)
-BerginskiRMisc::trimImage(here('figures/single_model_expression/model_comparison_with_dose.png'))
+BerginskiRMisc::trimImage(here('figures/single_model_expression/model_comparison_act_only.png'))
+notifysendR::notify_send("done with plotting")
 ```

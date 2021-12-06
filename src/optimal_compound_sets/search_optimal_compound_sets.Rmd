@@ -41,12 +41,60 @@ get_hit_dist = function(num_samples = 10000, num_drugs = 10) {
 		return()
 }
 
-tic()
-test_combos = get_hit_dist(num_samples = 100000)
-toc()
 
-best_combo = test_combos %>% filter(frac_hit == max(frac_hit))
+if (file.exists(here('results/optimal_compound_search/sample_hit_count_sets.rds'))) {
+	sample_combos = read_rds(here('results/optimal_compound_search/sample_hit_count_sets.rds'))
+} else {
+	tic()
+	sample_combos = bind_rows(
+		get_hit_dist(num_samples = 100000, num_drugs = 10),
+		get_hit_dist(num_samples = 100000, num_drugs = 20),
+		get_hit_dist(num_samples = 100000, num_drugs = 30),
+		get_hit_dist(num_samples = 100000, num_drugs = 40),
+		get_hit_dist(num_samples = 100000, num_drugs = 50),
+		get_hit_dist(num_samples = 100000, num_drugs = 60)
+	) %>% mutate(num_drugs = map_dbl(test_rows, ~length(.x))) %>%
+		write_rds(here('results/optimal_compound_search/sample_hit_count_sets.rds'), compress = 'gz')
+	toc()
+}
+
+notifysendR::notify_send("done with sampling")
+```
+
+
+
+```{r}
+best_results = Sys.glob(here('results/optimal_compound_search/best_hits/*')) %>%
+	map(~read_rds(.x)) %>%
+	reduce(rbind) %>% 
+	mutate(num_drugs = map_dbl(test_rows, ~length(.x)))
+
+best_by_compound_count = best_results %>% 
+	group_by(num_drugs) %>% 
+	filter(frac_hit == max(frac_hit))
 ```
 
 ```{r}
+library(ggridges)
+library(patchwork)
+
+sample_run = ggplot(sample_combos, aes(x=frac_hit, y=as.factor(num_drugs))) + 
+	geom_boxplot() +
+	labs(x="Fraction of Kinome Hit",
+			 title="Sample Kinome Coverages",
+			 y="Number of Compounds") +
+	BerginskiRMisc::theme_berginski()
+
+best_combos = ggplot(best_results, aes(x=frac_hit, y=as.factor(num_drugs))) + 
+	geom_boxplot() +
+	labs(x="Fraction of Kinome Hit",
+			 title="Best Coverage found in 500 Searches",
+			 y="Number of Compounds") +
+	BerginskiRMisc::theme_berginski()
+
+dir.create(here('figures/optimal_compound_search/'), showWarnings = F, recursive = T)
+ggsave(here('figures/optimal_compound_search/binary_search_results.png'), 
+			 sample_run + best_combos,
+			 width=8,height=4)
+BerginskiRMisc::trimImage(here('figures/optimal_compound_search/binary_search_results.png'))
 ```

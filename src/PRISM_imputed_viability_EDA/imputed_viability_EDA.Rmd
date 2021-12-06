@@ -9,12 +9,13 @@ output: github_document
 library(tidyverse)
 library(here)
 library(ggridges)
+library(vroom)
 
 knitr::opts_knit$set(root.dir = here())
 ```
 
 ```{r}
-imputed_PRISM = readRDS("~/Documents/Projects/PRISM_perturbations/results/PRISM_klaeger_imputed_tidy.rds") %>%
+imputed_PRISM = readRDS(here("results/PRISM_klaeger_imputed_tidy.rds")) %>%
 	ungroup()
 
 drug_via_summary = imputed_PRISM %>%
@@ -29,6 +30,15 @@ line_via_summary = imputed_PRISM %>%
 						sd_via = sd(imputed_viability)) %>%
 	arrange(mean_via)
 
+drug_line_summary = imputed_PRISM %>%
+	group_by(drug, depmap_id) %>%
+	summarise(mean_via = mean(imputed_viability),
+						range = max(imputed_viability) - min(imputed_viability),
+						dist_from_one = abs(mean_via - 1),
+						sd_via = sd(imputed_viability)) %>%
+	ungroup() %>%
+	mutate(dist_from_median_range = abs(range - median(range)))
+
 imputed_PRISM = imputed_PRISM %>%
 	mutate(drug = fct_relevel(drug,drug_via_summary$drug)) %>%
 	mutate(drug_rev = fct_relevel(drug,rev(drug_via_summary$drug))) %>%
@@ -37,16 +47,135 @@ imputed_PRISM = imputed_PRISM %>%
 	mutate(depmap_id_sd_factor = fct_relevel(depmap_id,line_via_summary %>% arrange(sd_via) %>% pull(depmap_id))) %>%
 	identity()
 
+
+
 dir.create(here('figures/imputed_viability_EDA'), showWarnings = F, recursive = T)
+```
+
+```{r}
+raw_screen_data = vroom(here('data/PRISM/secondary/secondary-screen-logfold-change.csv'))
+
+treatment_info = vroom(here('data/PRISM/secondary/secondary-screen-replicate-treatment-info.csv'))
+
+compound_match_list = read_csv(here('src/data_organization/find_PRISM_klaeger_matches/klaeger_PRISM_match_list.csv'))
+```
+
+```{r}
+klaeger_match_treatment_info = treatment_info %>% 
+	filter(broad_id %in% compound_match_list$broad_id) %>%
+	left_join(compound_match_list %>% select(broad_id,drug))
+
+raw_screen_tidy = raw_screen_data %>%
+	rename(depmap_id = ...1) %>%
+	select(depmap_id, any_of(klaeger_match_treatment_info$column_name)) %>%
+	pivot_longer(-depmap_id, names_to = "column_name", values_to = 'viability') %>%
+	left_join(klaeger_match_treatment_info %>% select(column_name,drug,dose))
+```
+
+# Single Viability Curves
+
+```{r}
+low_eff_combos = drug_line_summary %>% ungroup() %>% filter(dist_from_one == 0)
+
+low_eff_via = raw_screen_tidy %>% filter(depmap_id == "ACH-000209", 
+																				 drug == "Fedratinib") %>%
+	mutate(full_label = paste0(depmap_id,'\n',drug))
+low_eff_via_imputed = imputed_PRISM %>% filter(depmap_id == "ACH-000209", drug == "Fedratinib") %>%
+	mutate(full_label = paste0(depmap_id,'\n',drug))
+
+# dir.create(here('figures/imputed_viability_EDA/example_imputed_viability'))
+# ggplot(low_eff_via, aes(x=log10(dose/10^6),y=2^viability)) + 
+# 	geom_point() + 
+# 	geom_line(data = low_eff_via_imputed, 
+# 						mapping = aes(x=log10(klaeger_conc), y = imputed_viability), 
+# 						color='red') +
+# 	geom_point(data = low_eff_via_imputed, 
+# 						 mapping = aes(x=log10(klaeger_conc), y = imputed_viability), 
+# 						 color='red') +
+# 	labs(x="Compound Dose (Log 10 M)",y="Cell Viability") +
+# 	BerginskiRMisc::theme_berginski()
+# ggsave(here('figures/imputed_viability_EDA/example_imputed_viability/low_eff_impute_sample.png'), height=3,width=3)
+
+med_eff_via = raw_screen_tidy %>% 
+	filter(depmap_id == "ACH-000191", 
+				 drug == "Alisertib") %>% 
+	mutate(full_label = paste0(depmap_id,'\n',drug))
+med_eff_via_imputed = imputed_PRISM %>% filter(depmap_id == "ACH-000191", 
+																							 drug == "Alisertib") %>% 
+	mutate(full_label = paste0(depmap_id,'\n',drug))
+
+high_eff_via = raw_screen_tidy %>% filter(depmap_id == "ACH-000696", 
+																					drug == "AEE-788") %>%
+	mutate(full_label = paste0(depmap_id,'\n',drug))
+high_eff_via_imputed = imputed_PRISM %>% filter(depmap_id == "ACH-000696", 
+																								drug == "AEE-788") %>%
+	mutate(full_label = paste0(depmap_id,'\n',drug))
+
+all_raw_via = bind_rows(
+	low_eff_via, med_eff_via,high_eff_via
+)
+
+all_impute_samples = bind_rows(
+	low_eff_via_imputed, med_eff_via_imputed,high_eff_via_imputed
+)
+
+dir.create(here('figures/imputed_viability_EDA/example_imputed_viability'))
+ggplot(all_raw_via, aes(x=log10(dose/10^6),y=2^viability)) + 
+	geom_point() + 
+	geom_line(data = all_impute_samples, 
+						mapping = aes(x=log10(klaeger_conc), y = imputed_viability), 
+						color='red') +
+	geom_point(data = all_impute_samples, 
+						 mapping = aes(x=log10(klaeger_conc), y = imputed_viability), 
+						 color='red') +
+	labs(x="Compound Dose (Log 10 M)",y="Cell Viability") +
+	BerginskiRMisc::theme_berginski() +
+	facet_wrap(~full_label)
+ggsave(here('figures/imputed_viability_EDA/example_imputed_viability.png'), height=2.5,width=6)
+BerginskiRMisc::trimImage(here('figures/imputed_viability_EDA/example_imputed_viability.png'))
+
+```
+
+# Overall Sample Imputed Curves
+
+```{r}
+imputed_PRISM_drug_summary = imputed_PRISM %>%
+	group_by(drug,klaeger_conc) %>%
+	summarise(mean_imputed_via = mean(imputed_viability)) %>%
+	ungroup()
+
+imputed_PRISM_drug_range_summary = imputed_PRISM_drug_summary %>%
+	group_by(drug) %>%
+	summarise(max_via = max(mean_imputed_via),
+				 min_via = min(mean_imputed_via),
+				 range_via = max_via - min_via,
+				 max_via_from_one = abs(max_via - 1)) %>%
+	mutate(range_diff_from_median = abs(range_via - median(range_via)))
+
+sample_imputed_via = imputed_PRISM %>%
+	filter(drug == "Motesanib" | drug == "AZD-2014" | drug == "SB-1317") %>%
+	mutate(drug = fct_relevel(drug, c("Motesanib", "AZD-2014", "SB-1317")))
+sample_imputed_via_summary = imputed_PRISM_drug_summary %>%
+	filter(drug == "Motesanib" | drug == "AZD-2014" | drug == "SB-1317") %>%
+	mutate(drug = fct_relevel(drug, c("Motesanib", "AZD-2014", "SB-1317")))
+
+ggplot(sample_imputed_via, aes(x=log10(klaeger_conc),y=imputed_viability, group=depmap_id)) +
+	geom_line(alpha=0.05) +
+		geom_line(data=sample_imputed_via_summary,
+						mapping=aes(log10(klaeger_conc),y=mean_imputed_via,group='overall'),
+						color='blue',lwd=1) +
+	BerginskiRMisc::theme_berginski() +
+	labs(x="Compound Concentration (Log 10 M)",y="Imputed Cell Viability") +
+	facet_wrap(~drug)
+ggsave(here('figures/imputed_viability_EDA/example_imputed_viability.png'), height=2.5,width=6)
+BerginskiRMisc::trimImage(here('figures/imputed_viability_EDA/example_imputed_viability.png'))
 ```
 
 # Global Plots
 
 ```{r}
 ggplot(imputed_PRISM, aes(x=imputed_viability)) +
-	geom_histogram(breaks = seq(0,2,by=0.05)) +
-	geom_vline(aes(xintercept = median(imputed_viability)), color = 'red') +
-	geom_vline(aes(xintercept = 0.5), color = 'red') +
+	geom_histogram(breaks = seq(0,1,by=0.05)) +
 	labs(x="Imputed Cell Viability", y="Number of Cell Line/Compound\nCombinations") +
 	BerginskiRMisc::theme_berginski()
 ggsave(here('figures/imputed_viability_EDA/full_viability_hist.png'), width=4,height=3)
@@ -58,13 +187,16 @@ cell_line_compound_counts = imputed_PRISM %>%
 	select(drug,depmap_id) %>%
 	unique() %>%
 	group_by(depmap_id) %>%
-	summarise(num_drugs = n())
+	summarise(num_drugs = n()) %>%
+	arrange(desc(num_drugs)) %>%
+	mutate(depmap_id = fct_inorder(depmap_id)) %>%
+	mutate(depmap_id_num = 1:n())
 
 ggplot(cell_line_compound_counts, aes(x=num_drugs)) +
 	geom_histogram() +
 	labs(x = "Number of Drugs/Cell Line", y = "Number of Cell Lines") +
 	BerginskiRMisc::theme_berginski()
-ggsave(here('figures/imputed_viability_EDA/compounds_per_line_hist.png'),height=4,width=3)
+ggsave(here('figures/imputed_viability_EDA/compounds_per_line_hist.png'),height=3,width=2)
 BerginskiRMisc::trimImage(here('figures/imputed_viability_EDA/compounds_per_line_hist.png'))
 ```
 
@@ -78,6 +210,39 @@ ggplot(imputed_PRISM, aes(x=drug,y=imputed_viability)) +
 	BerginskiRMisc::theme_berginski()
 ggsave(here('figures/imputed_viability_EDA/viability_by_drug_boxplot.png'), width=2.3*8, height = 1*8)
 BerginskiRMisc::trimImage(here('figures/imputed_viability_EDA/viability_by_drug_boxplot.png'))
+```
+
+
+
+```{r}
+ggplot(imputed_PRISM, aes(x=imputed_viability,y=drug, fill=drug)) +
+	geom_density_ridges() +
+	labs(x="Imputed Viability", y='')  + 
+	scale_fill_cyclical(values = c("blue", "green")) +
+	BerginskiRMisc::theme_berginski() +
+	coord_flip() +
+	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + 
+	NULL
+
+ggsave(here('figures/imputed_viability_EDA/viability_by_drug_ridge.png'), width=2.3*8, height = 1*8)
+BerginskiRMisc::trimImage(here('figures/imputed_viability_EDA/viability_by_drug_ridge.png'))
+```
+
+```{r}
+ggplot(imputed_PRISM %>% 
+			 	filter(drug %in% drug_via_summary[round(seq(1,168,length = 60)),]$drug), 
+			 aes(x=imputed_viability,y=drug, fill=drug)) +
+	geom_density_ridges() +
+	labs(x="Imputed Viability", y='')  + 
+	scale_fill_cyclical(values = c("blue", "green")) +
+	BerginskiRMisc::theme_berginski() +
+	coord_flip() +
+	xlim(c(0,1)) +
+	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + 
+	NULL
+
+ggsave(here('figures/imputed_viability_EDA/viability_by_drug_ridge_sampled.png'), width=8, height = 3)
+BerginskiRMisc::trimImage(here('figures/imputed_viability_EDA/viability_by_drug_ridge_sampled.png'))
 ```
 
 ```{r}
@@ -119,9 +284,9 @@ ggplot(imputed_PRISM, aes(x=depmap_id,y=imputed_viability)) +
 	geom_boxplot(outlier.size = 0) +
 	labs(y="Imputed Viability", x='Cell Lines') +
 	BerginskiRMisc::theme_berginski() +
-  theme(axis.text.x=element_blank(),
-        axis.ticks.x=element_blank(),
-  			axis.title.x = element_text(margin = margin(t = 0, r = 0, b = 0, l = 0)))
+	theme(axis.text.x=element_blank(),
+				axis.ticks.x=element_blank(),
+				axis.title.x = element_text(margin = margin(t = 0, r = 0, b = 0, l = 0)))
 
 ggsave(here('figures/imputed_viability_EDA/viability_by_cell_boxplot.png'), width=2.3*8, height = 1*8)
 BerginskiRMisc::trimImage(here('figures/imputed_viability_EDA/viability_by_cell_boxplot.png'))
@@ -132,8 +297,8 @@ ggplot(imputed_PRISM, aes(x=imputed_viability,y=depmap_id)) +
 	geom_density_ridges() +
 	labs(x="Imputed Viability", y='Cell Lines') +
 	BerginskiRMisc::theme_berginski()  +
-  theme(axis.text.x=element_blank(),
-        axis.ticks.x=element_blank()) +
+	theme(axis.text.x=element_blank(),
+				axis.ticks.x=element_blank()) +
 	coord_flip()
 ggsave(here('figures/imputed_viability_EDA/viability_by_cell_ridge.png'), width=20)
 ```
