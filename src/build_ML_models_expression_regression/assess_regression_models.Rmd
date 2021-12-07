@@ -24,86 +24,29 @@ all_pred = data.frame()
 # Rand Forest Model Assessment
 
 ```{r}
-# tic()
-# 
-# for (feat_count in c(50,100,150,200,300,400,500,1000,1500,2000,3000,4000,5000)) {
-# 	
-# 	for (hyper in 1:3) {
-# 		model_files = Sys.glob(here('results/single_model_expression_regression',
-# 																sprintf('rand_forest_param_scan_%dfeat',feat_count),
-# 																sprintf('hyper%03d*.rds', hyper)))
-# 		
-# 		# if (length(model_files) != 10) {
-# 		# 	next;
-# 		# }
-# 		if (length(model_files) == 0) {
-# 			next;
-# 		}
-# 
-# 		for (i in 1:length(model_files)) {
-# 			this_cv_data = read_rds(model_files[i]) %>%
-# 				collect_predictions()
-# 
-# 			all_pred = bind_rows(
-# 				all_pred,
-# 				this_cv_data %>% mutate(feat_count = feat_count,
-# 																trees = unique(this_cv_data$trees),
-# 																model_type = 'rand_forest')
-# 			)
-# 
-# 			model_results = bind_rows(
-# 				model_results,
-# 				data.frame(feat_count = feat_count,
-# 									 hyper = i,
-# 									 trees = unique(this_cv_data$trees),
-# 									 model_type = 'rand_forest',
-# 									 rmse = sqrt(mean((this_cv_data$.pred - this_cv_data$target_viability)^2)),
-# 									 r2 = glance(summary(lm(this_cv_data$.pred ~ this_cv_data$target_viability)))$r.squared))
-# 		}
-# 	}
-# }
-# 
-# toc()
-```
-
-```{r}
 tic()
 
-for (feat_count in c(50,100,150,200,300,400,500,1000,1500,2000,3000,4000,5000)) {
+for (feat_count in c(100,200,300,400,500,1000,1500,2000)) {
+	model_files = Sys.glob(here('results/single_model_expression_regression/rand_forest/',
+															sprintf('%dfeat_notune_pred',feat_count),
+															"*"))
 	
-	for (hyper in 1:1) {
-		model_files = Sys.glob(here('results/single_model_expression_regression',
-																sprintf('rand_forest_param_scan_%dfeat_notune',feat_count),
-																sprintf('hyper%03d*.rds', hyper)))
+	for (this_file in model_files) {
+		these_cv_results = read_rds(this_file) %>%
+			mutate(fold_file = basename(this_file),
+						 feat_count = feat_count)
 		
-		if (length(model_files) != 10) {
-			next;
-		}
-		
-		for (i in 1:length(model_files)) {
-			this_cv_data = read_rds(model_files[i]) %>%
-				collect_predictions()
-			
-			all_pred = bind_rows(
-				all_pred,
-				this_cv_data %>% mutate(feat_count = feat_count, 
-																trees = 500, 
-																model_type = 'rand_forest')
-			)
-			
-			model_results = bind_rows(
-				model_results,
-				data.frame(feat_count = feat_count,
-									 hyper = i,
-									 trees = 500,
-									 model_type = 'rand_forest',
-									 rmse = sqrt(mean((this_cv_data$.pred - this_cv_data$target_viability)^2)),
-									 r2 = glance(summary(lm(this_cv_data$.pred ~ this_cv_data$target_viability)))$r.squared))
-		}
+		model_results = bind_rows(
+			model_results,
+			data.frame(feat_count = feat_count,
+								 trees = 500,
+								 fold_file = basename(this_file),
+								 model_type = 'rand_forest',
+								 rmse = sqrt(mean((these_cv_results$.pred - these_cv_results$target_viability)^2)),
+								 r2 = glance(summary(lm(these_cv_results$.pred ~ these_cv_results$target_viability)))$r.squared))
 	}
 	
 }
-
 toc()
 ```
 
@@ -112,41 +55,27 @@ toc()
 ```{r}
 tic()
 
-for (feat_count in c(200,500,1000,1500)) {
+for (feat_count in c(100,200,300,400,500,1000,1500,2000)) {
+	model_files = Sys.glob(here('results/single_model_expression_regression/xgboost/',
+															sprintf('%dfeat_notune_pred',feat_count),
+															"*"))
 	
-	for (hyper in 1:1) {
-		model_files = Sys.glob(here('results/single_model_expression_regression',
-																sprintf('xgboost_param_scan_%dfeat_notune',feat_count),
-																sprintf('hyper%03d*.rds', hyper)))
+	for (this_file in model_files) {
+		these_cv_results = read_rds(this_file) %>%
+			mutate(fold_file = basename(this_file),
+						 feat_count = feat_count)
 		
-		if (length(model_files) != 10) {
-			next;
-		}
-		
-		for (i in 1:length(model_files)) {
-			this_cv_data = read_rds(model_files[i]) %>%
-				collect_predictions()
-			
-			all_pred = bind_rows(
-				all_pred,
-				this_cv_data %>% mutate(feat_count = feat_count, 
-																trees = NA, 
-																model_type = 'xgboost')
-			)
-			
-			model_results = bind_rows(
-				model_results,
-				data.frame(feat_count = feat_count,
-									 hyper = i,
-									 trees = NA,
-									 model_type = 'xgboost',
-									 rmse = sqrt(mean((this_cv_data$.pred - this_cv_data$target_viability)^2)),
-									 r2 = glance(summary(lm(this_cv_data$.pred ~ this_cv_data$target_viability)))$r.squared))
-		}
+		model_results = bind_rows(
+			model_results,
+			data.frame(feat_count = feat_count,
+								 trees = NA,
+								 fold_file = basename(this_file),
+								 model_type = 'xgboost',
+								 rmse = sqrt(mean((these_cv_results$.pred - these_cv_results$target_viability)^2)),
+								 r2 = glance(summary(lm(these_cv_results$.pred ~ these_cv_results$target_viability)))$r.squared))
 	}
 	
 }
-
 toc()
 ```
 
@@ -155,41 +84,27 @@ toc()
 ```{r}
 tic()
 
-for (feat_count in c(200,500,1000,1500)) {
+for (feat_count in c(100,200,300,400,500,1000,1500,2000)) {
+	model_files = Sys.glob(here('results/single_model_expression_regression/linear/',
+															sprintf('%dfeat_notune_pred',feat_count),
+															"*"))
 	
-	for (hyper in 1:1) {
-		model_files = Sys.glob(here('results/single_model_expression_regression',
-																sprintf('lin_param_scan_%dfeat',feat_count),
-																sprintf('hyper%03d*.rds', hyper)))
+	for (this_file in model_files) {
+		these_cv_results = read_rds(this_file) %>%
+			mutate(fold_file = basename(this_file),
+						 feat_count = feat_count)
 		
-		if (length(model_files) != 10) {
-			next;
-		}
-		
-		for (i in 1:length(model_files)) {
-			this_cv_data = read_rds(model_files[i]) %>%
-				collect_predictions()
-			
-			all_pred = bind_rows(
-				all_pred,
-				this_cv_data %>% mutate(feat_count = feat_count, 
-																trees = NA, 
-																model_type = 'lin')
-			)
-			
-			model_results = bind_rows(
-				model_results,
-				data.frame(feat_count = feat_count,
-									 hyper = i,
-									 trees = NA,
-									 model_type = 'lin',
-									 rmse = sqrt(mean((this_cv_data$.pred - this_cv_data$target_viability)^2)),
-									 r2 = glance(summary(lm(this_cv_data$.pred ~ this_cv_data$target_viability)))$r.squared))
-		}
+		model_results = bind_rows(
+			model_results,
+			data.frame(feat_count = feat_count,
+								 trees = NA,
+								 fold_file = basename(this_file),
+								 model_type = 'linear',
+								 rmse = sqrt(mean((these_cv_results$.pred - these_cv_results$target_viability)^2)),
+								 r2 = glance(summary(lm(these_cv_results$.pred ~ these_cv_results$target_viability)))$r.squared))
 	}
 	
 }
-
 toc()
 ```
 
@@ -198,21 +113,27 @@ toc()
 ```{r}
 fold_ids = read_rds(here('results/single_model_expression_regression/CV_split_row_nums.rds'))
 
-imputed_via = read_rds(here('results/single_model_exp_only_regression/full_model_data_set_1500feat.rds')) %>%
-	select(depmap_id, drug, klaeger_conc,imputed_viability)
+PRISM_klaeger_imputed = read_rds(here('results/PRISM_klaeger_imputed_tidy.rds'))
+
+CCLE_data = read_rds(here('results/single_model/full_CCLE_expression_set_for_ML.rds'))
+
+PRISM_klaeger_imputed = PRISM_klaeger_imputed %>%
+	filter(depmap_id %in% CCLE_data$DepMap_ID) %>%
+	ungroup()
 
 CV_aver_eff = data.frame()
 
 for (this_fold_id in unique(fold_ids)) {
-	aver_eff = imputed_via %>% 
+	aver_eff = PRISM_klaeger_imputed %>% 
 		slice(which(fold_ids != this_fold_id)) %>%
-		group_by(drug,klaeger_conc) %>%
+		# group_by(drug,klaeger_conc) %>%
+		group_by(drug) %>%
 		summarise(aver_via = mean(imputed_viability)) %>%
 		ungroup()
 	
 	CV_aver_eff = bind_rows(
 		CV_aver_eff,
-		imputed_via %>%
+		PRISM_klaeger_imputed %>%
 			slice(which(fold_ids == this_fold_id)) %>%
 			left_join(aver_eff)
 	)
@@ -222,48 +143,7 @@ naive_average_r2 = cor(CV_aver_eff$imputed_viability,CV_aver_eff$aver_via)^2
 naive_average_rmse = rmse(CV_aver_eff$imputed_viability,CV_aver_eff$aver_via)
 ```
 
-# NN Model Assessment
 
-```{r}
-# tic()
-# 
-# for (feat_count in c(200,500,1000,1500)) {
-# 	
-# 	for (hyper in 1:1) {
-# 		model_files = Sys.glob(here('results/single_model_expression_regression',
-# 																sprintf('NN_param_scan_%dfeat',feat_count),
-# 																sprintf('hyper%03d*.rds', hyper)))
-# 		
-# 		if (length(model_files) != 10) {
-# 			next;
-# 		}
-# 		
-# 		for (i in 1:length(model_files)) {
-# 			this_cv_data = read_rds(model_files[i]) %>%
-# 				collect_predictions()
-# 			
-# 			all_pred = bind_rows(
-# 				all_pred,
-# 				this_cv_data %>% mutate(feat_count = feat_count, 
-# 																trees = NA, 
-# 																model_type = 'NN')
-# 			)
-# 			
-# 			model_results = bind_rows(
-# 				model_results,
-# 				data.frame(feat_count = feat_count,
-# 									 hyper = i,
-# 									 trees = NA,
-# 									 model_type = 'NN',
-# 									 rmse = sqrt(mean((this_cv_data$.pred - this_cv_data$target_viability)^2)),
-# 									 r2 = glance(summary(lm(this_cv_data$.pred ~ this_cv_data$target_viability)))$r.squared))
-# 		}
-# 	}
-# 	
-# }
-# 
-# toc()
-```
 
 ```{r}
 model_summary = model_results %>% 
@@ -275,20 +155,19 @@ model_summary = model_results %>%
 	mutate(model_type_FN = case_when(
 		model_type == "rand_forest" ~ "Random Forest",
 		model_type == "xgboost" ~ "XGBoost",
-		model_type == "lin" ~ "Linear Regresssion"
+		model_type == "linear" ~ "Linear Regresssion"
 	)) %>%
 	select(model_type,feat_count,trees,r2_estimate,rmse_estimate,everything())
 
 
-single_pred_set = all_pred %>% 
-	filter(model_type == "rand_forest", trees == 500, feat_count == 1500) %>% 
-	mutate(worst_pred = case_when(
-		target_viability <= 1 ~ 0,
-		T ~ 2
-	))
-
-worst_rmse = sqrt(mean((single_pred_set$worst_pred - single_pred_set$target_viability)^2))
-notifysendR::notify_send("done with data reading")
+# single_pred_set = all_pred %>% 
+# 	filter(model_type == "rand_forest", trees == 500, feat_count == 1500) %>% 
+# 	mutate(worst_pred = case_when(
+# 		target_viability <= 1 ~ 0,
+# 		T ~ 2
+# 	))
+# 
+# worst_rmse = sqrt(mean((single_pred_set$worst_pred - single_pred_set$target_viability)^2))
 ```
 
 # Figures
@@ -296,27 +175,23 @@ notifysendR::notify_send("done with data reading")
 ```{r}
 dir.create(here('figures/single_model_expression'), recursive = T)
 
-r2_plot = ggplot(model_summary %>% 
-								 	filter(trees == 500 | is.na(trees), 
-								 				 feat_count %in% c(200,500,1000,1500)), 
+r2_plot = ggplot(model_summary, 
 								 aes(y=r2_estimate,x=feat_count, color=model_type_FN, shape=model_type_FN)) + 
 	geom_hline(aes(yintercept = naive_average_r2), linetype = 2, alpha = 0.5) +
 	geom_point(size=2) + 
 	# geom_errorbar(aes(ymin=r2_conf.low,ymax=r2_conf.high)) +
 	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-	scale_x_continuous(breaks=c(200,500,1000,1500)) +
+	# scale_x_continuous(breaks=c(200,500,1000,1500)) +
 	labs(x="Number of Features",y="R\u00B2", color="",shape="") +
 	BerginskiRMisc::theme_berginski()
 
-rmse_plot = ggplot(model_summary %>% 
-									 	filter(trees == 500 | is.na(trees), 
-									 				 feat_count %in% c(200,500,1000,1500)), 
+rmse_plot = ggplot(model_summary, 
 									 aes(y=rmse_estimate,x=feat_count, color=model_type_FN, shape=model_type_FN)) + 
 	geom_hline(aes(yintercept = naive_average_rmse), linetype = 2, alpha = 0.5) +
 	geom_point(size=2) + 
 	# geom_errorbar(aes(ymin=rmse_conf.low,ymax=rmse_conf.high)) +
 	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-	scale_x_continuous(breaks=c(200,500,1000,1500)) +
+	# scale_x_continuous(breaks=c(200,500,1000,1500)) +
 	labs(x="Number of Features",y="RMSE",color="",shape="") +
 	BerginskiRMisc::theme_berginski()
 
@@ -329,70 +204,71 @@ BerginskiRMisc::trimImage(here('figures/single_model_expression/model_comparison
 ```
 
 ```{r}
-dir.create(here('figures/single_model_expression'), recursive = T)
-
-r2_plot = ggplot(model_summary %>% 
-								 	filter(trees == 500, model_type == "rand_forest"), 
-								 aes(y=r2_estimate,x=feat_count)) + 
-	geom_hline(aes(yintercept = naive_average_r2), linetype = 2, alpha = 0.5) +
-	geom_point() + 
-	# geom_errorbar(aes(ymin=r2_conf.low,ymax=r2_conf.high)) +
-	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-	labs(x="Number of Features",y="R\u00B2") +
-	gghighlight(feat_count == 1500) +
-	BerginskiRMisc::theme_berginski()
-
-rmse_plot = ggplot(model_summary %>% 
-									 	filter(trees == 500, model_type == "rand_forest"), 
-									 aes(y=rmse_estimate,x=feat_count)) + 
-	geom_hline(aes(yintercept = naive_average_rmse), linetype = 2, alpha = 0.5) +
-	geom_point() + 
-	# geom_errorbar(aes(ymin=rmse_conf.low,ymax=rmse_conf.high)) +
-	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-	labs(x="Number of Features",y="RMSE") +
-	gghighlight(feat_count == 1500) +
-	BerginskiRMisc::theme_berginski()
-
-ggsave(here('figures/single_model_expression/rand_forest_feature_counts.png'),
-			 r2_plot + rmse_plot,
-			 width=6*0.8,height=3*0.8)
-BerginskiRMisc::trimImage(here('figures/single_model_expression/rand_forest_feature_counts.png'))
+# dir.create(here('figures/single_model_expression'), recursive = T)
+# 
+# r2_plot = ggplot(model_summary %>% 
+# 								 	filter(trees == 500, model_type == "rand_forest"), 
+# 								 aes(y=r2_estimate,x=feat_count)) + 
+# 	geom_hline(aes(yintercept = naive_average_r2), linetype = 2, alpha = 0.5) +
+# 	geom_point() + 
+# 	# geom_errorbar(aes(ymin=r2_conf.low,ymax=r2_conf.high)) +
+# 	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+# 	labs(x="Number of Features",y="R\u00B2") +
+# 	gghighlight(feat_count == 1500) +
+# 	BerginskiRMisc::theme_berginski()
+# 
+# rmse_plot = ggplot(model_summary %>% 
+# 									 	filter(trees == 500, model_type == "rand_forest"), 
+# 									 aes(y=rmse_estimate,x=feat_count)) + 
+# 	geom_hline(aes(yintercept = naive_average_rmse), linetype = 2, alpha = 0.5) +
+# 	geom_point() + 
+# 	# geom_errorbar(aes(ymin=rmse_conf.low,ymax=rmse_conf.high)) +
+# 	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+# 	labs(x="Number of Features",y="RMSE") +
+# 	gghighlight(feat_count == 1500) +
+# 	BerginskiRMisc::theme_berginski()
+# 
+# ggsave(here('figures/single_model_expression/rand_forest_feature_counts.png'),
+# 			 r2_plot + rmse_plot,
+# 			 width=6*0.8,height=3*0.8)
+# BerginskiRMisc::trimImage(here('figures/single_model_expression/rand_forest_feature_counts.png'))
 ```
 
 ```{r}
-dir.create(here('figures/single_model_expression'), recursive = T)
-
-r2_plot = ggplot(model_summary %>% 
-								 	filter(feat_count %in% c(500,1000,1500,2000), model_type == "rand_forest"), 
-								 aes(y=r2_estimate,x=as.factor(feat_count), color=as.factor(trees))) + 
-	geom_point(position=position_dodge(width=0.5)) + 
-	geom_errorbar(aes(ymin=r2_conf.low,ymax=r2_conf.high),
-								position=position_dodge(width=0.5)) +
-	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-	labs(x="Number of Features",y="Mean R\u00B2",color="# Trees") +
-	BerginskiRMisc::theme_berginski()
-
-rmse_plot = ggplot(model_summary %>% 
-									 	filter(feat_count %in% c(500,1000,1500,2000), model_type == "rand_forest"),
-									 aes(y=rmse_estimate,x=as.factor(feat_count), color=as.factor(trees))) + 
-	geom_point(position=position_dodge(width=0.5)) +
-	geom_errorbar(aes(ymin=rmse_conf.low,ymax=rmse_conf.high),
-								position=position_dodge(width=0.5)) +
-	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-	labs(x="Number of Features",y="Mean RMSE",color="# Trees") +
-	BerginskiRMisc::theme_berginski()
-
-ggsave(here('figures/single_model_expression/rand_forest_tree_count.png'),r2_plot + rmse_plot,width=8,height=4)
-BerginskiRMisc::trimImage(here('figures/single_model_expression/rand_forest_tree_count.png'))
+# dir.create(here('figures/single_model_expression'), recursive = T)
+# 
+# r2_plot = ggplot(model_summary %>% 
+# 								 	filter(feat_count %in% c(500,1000,1500,2000), model_type == "rand_forest"), 
+# 								 aes(y=r2_estimate,x=as.factor(feat_count), color=as.factor(trees))) + 
+# 	geom_point(position=position_dodge(width=0.5)) + 
+# 	geom_errorbar(aes(ymin=r2_conf.low,ymax=r2_conf.high),
+# 								position=position_dodge(width=0.5)) +
+# 	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+# 	labs(x="Number of Features",y="Mean R\u00B2",color="# Trees") +
+# 	BerginskiRMisc::theme_berginski()
+# 
+# rmse_plot = ggplot(model_summary %>% 
+# 									 	filter(feat_count %in% c(500,1000,1500,2000), model_type == "rand_forest"),
+# 									 aes(y=rmse_estimate,x=as.factor(feat_count), color=as.factor(trees))) + 
+# 	geom_point(position=position_dodge(width=0.5)) +
+# 	geom_errorbar(aes(ymin=rmse_conf.low,ymax=rmse_conf.high),
+# 								position=position_dodge(width=0.5)) +
+# 	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+# 	labs(x="Number of Features",y="Mean RMSE",color="# Trees") +
+# 	BerginskiRMisc::theme_berginski()
+# 
+# ggsave(here('figures/single_model_expression/rand_forest_tree_count.png'),r2_plot + rmse_plot,width=8,height=4)
+# BerginskiRMisc::trimImage(here('figures/single_model_expression/rand_forest_tree_count.png'))
 
 ```
 
 
 ```{r}
-best_pred = all_pred %>%
-	filter(model_type == "rand_forest", feat_count == 1500, trees == 500) %>%
+best_pred = Sys.glob(here('results/single_model_expression_regression/rand_forest/500feat_notune_pred/*')) %>%
+	map(~read_rds(.x)) %>%
+	reduce(rbind) %>%
 	mutate(viability_binned = cut(target_viability,
-																seq(0,2,by=0.05),
+																seq(0,1,by=0.05),
 																include.lowest = T))
 
 binned_summary = best_pred %>%
@@ -400,9 +276,12 @@ binned_summary = best_pred %>%
 	summarise(median_via = median(target_viability))
 
 best_model_summary = model_summary %>% 
-	filter(model_type == "rand_forest", feat_count == 1500, trees == 500)
+	filter(model_type == "rand_forest", feat_count == 500, trees == 500)
 
 summary_text = paste0("R\u00B2: ",signif(best_model_summary$r2_estimate,3), "\n",
+											"RMSE: ",signif(best_model_summary$rmse_estimate,3))
+
+summary_title = paste0("R\u00B2: ",signif(best_model_summary$r2_estimate,3), " / ",
 											"RMSE: ",signif(best_model_summary$rmse_estimate,3))
 
 ggplot(best_pred, aes(x=target_viability,y=.pred)) +
@@ -411,9 +290,10 @@ ggplot(best_pred, aes(x=target_viability,y=.pred)) +
 	geom_smooth(color = 'red') +
 	scale_fill_viridis_c() +
 	labs(x="Actual Imputed Viability", y="Predicted Viability",fill="Log10\n# Values") +
-	geom_text(aes(x=-Inf,y=Inf,hjust=-0.1,vjust=1,label=summary_text), size=3.5, color='blue') +
+	# geom_text(aes(x=-Inf,y=Inf,hjust=-0.1,vjust=1,label=summary_text), size=3.5, color='blue') +
 	BerginskiRMisc::theme_berginski() +
-	xlim(c(0,2)) + ylim(c(0,2)) +
+	ggtitle(summary_title) +
+	# xlim(c(0,2)) + ylim(c(0,2)) +
 	theme(aspect.ratio = 1:1, legend.margin=margin(0,0,0,0), legend.box.margin=margin(-10,-5,-10,-10))
 
 ggsave(here('figures/single_model_expression/viability_vs_pred_best_hex.png'),height=3,width=3)
@@ -424,7 +304,7 @@ ggplot(best_pred, aes(x=viability_binned,y=.pred)) +
 	geom_point(data = binned_summary, aes(x=viability_binned,y=median_via), color = 'blue') +
 	labs(x="Binned Viability Ranges", y="Predicted Viability") +
 	BerginskiRMisc::theme_berginski() +
-	geom_text(aes(x=-Inf,y=Inf,hjust=0,vjust=1,label=summary_text)) +
+	geom_text(aes(x=-Inf,y=Inf,hjust=0,vjust=1,label=summary_text), color='black') +
 	# xlim(c(0,2)) + ylim(c(0,2)) +
 	theme(aspect.ratio = 1:1) +
 	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
