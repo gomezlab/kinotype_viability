@@ -1,0 +1,16 @@
+---
+title: "Vemurafenib Melanoma PDX data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(GEOquery)
+library(here)
+```
+```{r}
+getGEOSuppFiles('GSE66539')
+GSE66539 = read_tsv(here('GSE66539/GSE66539_read_count.matrix.txt.gz'))
+
+```
+

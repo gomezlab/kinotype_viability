@@ -1,0 +1,124 @@
+---
+title: "prep_downloaded_GEO_data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(conflicted)
+conflict_prefer("filter", "dplyr")
+conflict_prefer("select", "dplyr")
+```
+
+```{r}
+#read in data
+GEO_metadata = read_csv(here('data/Clinical_Data/GEO/patient_RNASeq_Metadata_GEO.csv'))
+
+TCGA_for_ml = read_csv(here('data/Clinical_Data/TCGA/All_TCGA_for_ml.csv'))
+
+ensembl = biomaRt::useEnsembl("genes",dataset="hsapiens_gene_ensembl")
+		transcript_to_hgnc = biomaRt::getBM(attributes = c('ensembl_gene_id', 
+																											 'ensembl_transcript_id',
+																											 'ensembl_transcript_id_version',
+																											 'hgnc_symbol'), 
+																				mart = ensembl)
+
+SRR_metadata = read_csv(here('data/Clinical_Data/All_SRRs_GEO.csv'))
+
+GEO_TPM_info = SRR_metadata %>% 
+	mutate("SRR_alignment" = paste0('C:/Users/Chinmaya/salmon_alignments/GEO/', Run, '/quant.sf'))
+
+gather_gene_TPM_values <- function(GEO_TPM_info) {
+	
+	full_TPM_data = data.frame(hgnc_symbol = sort(unique(transcript_to_hgnc$hgnc_symbol))) %>%
+		filter(hgnc_symbol != "")
+	
+	for (i in 1:dim(GEO_TPM_info)[1]) {
+		data_set_name = paste0(GEO_TPM_info$geo_accession[i])
+		this_salmon_data = read_tsv(GEO_TPM_info$SRR_alignment[i], 
+																col_types = cols(
+																	Name = col_character(),
+																	Length = col_double(),
+																	EffectiveLength = col_double(),
+																	TPM = col_double(),
+																	NumReads = col_double()
+																)) %>% 
+			separate(Name, into = c('Name', 'version')) %>%
+			select(-version)
+		
+		this_salmon_data = this_salmon_data %>% 
+			left_join(transcript_to_hgnc %>% select(ensembl_transcript_id,hgnc_symbol), 
+								by = c('Name' = 'ensembl_transcript_id')) %>%
+			filter(hgnc_symbol != "") %>%
+			group_by(hgnc_symbol) %>%
+			summarise(TPM = sum(TPM)) %>% 
+			rename(!!data_set_name := TPM)
+		
+		full_TPM_data = full_TPM_data %>% left_join(this_salmon_data, by='hgnc_symbol')
+	}
+	
+	return(full_TPM_data)
+}
+
+GEO_TPMs = gather_gene_TPM_values(GEO_TPM_info)
+```
+
+```{r}
+#Data Processing
+GEO_TPMs_filtered = GEO_TPMs %>% 
+	drop_na(starts_with('GSM')) %>% 
+	pivot_longer(starts_with('GSM'), names_to = 'sample_id', values_to = 'TPM') %>% 
+	pivot_wider(names_from = hgnc_symbol, values_from = TPM)
+
+write_csv(GEO_TPMs_filtered, here('data/clinical_Data/GEO/All_GEO_TPMs.csv'))
+All_GEO_TPMs = read_csv(here('data/clinical_Data/GEO/All_GEO_TPMs.csv')) %>% 
+	pivot_longer(A1BG:ZZZ3, names_to = 'gene', values_to = 'TPM')
+#Joining metadata
+
+GEO_for_ml = GEO_TPMs_filtered %>% 
+	left_join(GEO_metadata, by = 'sample_id') %>% 
+	dplyr::select(-description)
+
+write_csv(GEO_for_ml, here('data/clinical_Data/GEO/GEO_for_ml.csv'))
+
+
+TCGA_for_ml = TCGA_for_ml %>% 
+	dplyr::select(-bcr_drug_barcode, -bcr_drug_uuid)
+
+TCGA_for_ml_long = TCGA_for_ml %>% 
+	pivot_longer(A1BG:ZZZ3, names_to = 'gene', values_to = 'TPM')
+
+GEO_cols = as.data.frame(names(GEO_for_ml))
+
+TCGA_cols = as.data.frame(names(TCGA_for_ml))
+
+GEO_for_ml_long = GEO_for_ml %>% 
+	pivot_longer(A1BG:ZZZ3, names_to = 'gene', values_to = 'TPM')
+
+#seeing how many model genes are in there
+model_genes = read_csv(here('data/exp_genes_in_model.csv'))
+
+GEO_model_matched_genes = GEO_for_ml_long	%>% 
+	select(gene) %>%  
+	unique() %>% 
+	filter(gene %in% model_genes$gene)
+
+GEO_model_unmatched_genes = model_genes %>% 
+	filter(!gene %in% GEO_model_matched_genes$gene)
+
+write_csv(GEO_model_unmatched_genes, here('data/Clinical_Data/GEO/GEO_model_unmatched_genes.csv'))
+
+
+#GENE FAM122A is PABIR1 in GEO
+GEO_for_ml_matched_long = GEO_for_ml_long %>% 
+	rename('hgnc_symbol' = gene) %>% 
+	mutate('gene' = if_else(hgnc_symbol == 'PABIR1', 'FAM122A', hgnc_symbol)) %>%
+	select(-hgnc_symbol)
+
+GEO_for_ml_matched = GEO_for_ml_matched_long %>% 
+	pivot_wider(names_from = gene, values_from = TPM)
+
+write_csv(GEO_for_ml_matched, here('data/Clinical_Data/GEO/GEO_for_ml_matched.csv'))
+
+```

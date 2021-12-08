@@ -1,0 +1,268 @@
+---
+title: "dowload_TCGA_data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(conflicted)
+conflict_prefer("filter", "dplyr")
+conflict_prefer("select", "dplyr")
+```
+
+```{r}
+#read in data
+RNAseq_Data = tibble::tribble(
+	~files, ~dataset,
+	
+	'C:/Users/Chinmaya/RNAseq_data/ACC/ACC.uncv2.mRNAseq_RSEM_all.txt', "ACC",
+	'C:/Users/Chinmaya/RNAseq_data/BLCA/BLCA.uncv2.mRNAseq_RSEM_all.txt', "BLCA",
+	'C:/Users/Chinmaya/RNAseq_data/BRCA/BRCA.uncv2.mRNAseq_RSEM_all.txt', "BRCA",
+	'C:/Users/Chinmaya/RNAseq_data/COAD/COAD.uncv2.mRNAseq_RSEM_all.txt', "COAD",
+	'C:/Users/Chinmaya/RNAseq_data/COADREAD/COADREAD.uncv2.mRNAseq_RSEM_all.txt', "COADREAD",
+	'C:/Users/Chinmaya/RNAseq_data/GBM/GBM.uncv2.mRNAseq_RSEM_all.txt', "GBM",
+	'C:/Users/Chinmaya/RNAseq_data/GBMLGG/GBMLGG.uncv2.mRNAseq_RSEM_all.txt', "GBMLGG",
+	'C:/Users/Chinmaya/RNAseq_data/HNSC/HNSC.uncv2.mRNAseq_RSEM_all.txt', "HNSC",
+	'C:/Users/Chinmaya/RNAseq_data/KICH/KICH.uncv2.mRNAseq_RSEM_all.txt', "KICH",
+	'C:/Users/Chinmaya/RNAseq_data/KIPAN/KIPAN.uncv2.mRNAseq_RSEM_all.txt', "KIPAN",
+	'C:/Users/Chinmaya/RNAseq_data/KIRC/KIRC.uncv2.mRNAseq_RSEM_all.txt', "KIRC",
+	'C:/Users/Chinmaya/RNAseq_data/KIRP/KIRP.uncv2.mRNAseq_RSEM_all.txt', "KIRP",
+	'C:/Users/Chinmaya/RNAseq_data/LGG/LGG.uncv2.mRNAseq_RSEM_all.txt', "LGG",
+	'C:/Users/Chinmaya/RNAseq_data/LIHC/LIHC.uncv2.mRNAseq_RSEM_all.txt', "LIHC",
+	'C:/Users/Chinmaya/RNAseq_data/LUAD/LUAD.uncv2.mRNAseq_RSEM_all.txt', "LUAD",
+	'C:/Users/Chinmaya/RNAseq_data/LUSC/LUSC.uncv2.mRNAseq_RSEM_all.txt', "LUSC",
+	'C:/Users/Chinmaya/RNAseq_data/MESO/MESO.uncv2.mRNAseq_RSEM_all.txt', "MESO",
+	'C:/Users/Chinmaya/RNAseq_data/PAAD/PAAD.uncv2.mRNAseq_RSEM_all.txt', "PAAD",
+	'C:/Users/Chinmaya/RNAseq_data/SARC/SARC.uncv2.mRNAseq_RSEM_all.txt', "SARC",
+	'C:/Users/Chinmaya/RNAseq_data/SKCM/SKCM.uncv2.mRNAseq_RSEM_all.txt', "SKCM",
+)
+
+All_TCGA_data = data.frame()
+
+for(i in 1:dim(RNAseq_Data)[1]) {
+	data_set_name = paste0(RNAseq_Data$dataset[i])
+	
+	this_TCGA_data = read_tsv(RNAseq_Data$files[i]) %>%
+		rename('gene' = `HYBRIDIZATION R`) %>% 
+		pivot_longer(-gene, names_to = 'patient') %>% 
+		mutate('tumor' = data_set_name)
+		All_TCGA_data = bind_rows(All_TCGA_data, this_TCGA_data)
+}
+
+
+# ACC = read_tsv('C:/Users/Chinmaya/RNAseq_data/ACC/ACC.uncv2.mRNAseq_RSEM_all.txt') %>%
+# 	rename('gene' = `HYBRIDIZATION R`) %>%
+# 	pivot_longer(-gene, names_to = 'patient')
+# BLCA = read_tsv('C:/Users/Chinmaya/RNAseq_data/BLCA/BLCA.uncv2.mRNAseq_RSEM_all.txt') %>%
+# 	rename('gene' = `HYBRIDIZATION R`) %>% 
+# 	pivot_longer(-gene, names_to = 'patient')
+# BRCA = read_tsv('C:/Users/Chinmaya/RNAseq_data/BRCA/BRCA.uncv2.mRNAseq_RSEM_all.txt') %>%
+# 	rename('gene' = `HYBRIDIZATION R`) %>% 
+# 	pivot_longer(-gene, names_to = 'patient')
+# COAD = read_tsv('C:/Users/Chinmaya/RNAseq_data/COAD/COAD.uncv2.mRNAseq_RSEM_all.txt') %>%
+# 	rename('gene' = `HYBRIDIZATION R`) %>% 
+# 	pivot_longer(-gene, names_to = 'patient')
+# COADREAD = read_tsv('C:/Users/Chinmaya/RNAseq_data/COADRED/COADREAD.uncv2.mRNAseq_RSEM_all.txt') %>%
+# 	rename('gene' = `HYBRIDIZATION R`) %>% 
+# 	pivot_longer(-gene, names_to = 'patient')
+# GBM = read_tsv('C:/Users/Chinmaya/RNAseq_data/GBM/GBM.uncv2.mRNAseq_RSEM_all.txt') %>%
+# 	rename('gene' = `HYBRIDIZATION R`) %>% 
+# 	pivot_longer(-gene, names_to = 'patient')
+# GBMLGG = read_tsv('C:/Users/Chinmaya/RNAseq_data/GBMLGG/GBMLGG.uncv2.mRNAseq_RSEM_all.txt') %>%
+# 	rename('gene' = `HYBRIDIZATION R`) %>% 
+# 	pivot_longer(-gene, names_to = 'patient')
+# HNSC = read_tsv('C:/Users/Chinmaya/RNAseq_data/HNSC/HNSC.uncv2.mRNAseq_RSEM_all.txt') %>%
+# 	rename('gene' = `HYBRIDIZATION R`) %>% 
+# 	pivot_longer(-gene, names_to = 'patient')
+# KICH = read_tsv('C:/Users/Chinmaya/RNAseq_data/KICH/KICH.uncv2.mRNAseq_RSEM_all.txt') %>%
+# 	rename('gene' = `HYBRIDIZATION R`) %>% 
+# 	pivot_longer(-gene, names_to = 'patient')
+# KIPAN = read_tsv('C:/Users/Chinmaya/RNAseq_data/KIPAN/KIPAN.uncv2.mRNAseq_RSEM_all.txt') %>%
+# 	rename('gene' = `HYBRIDIZATION R`) %>% 
+# 	pivot_longer(-gene, names_to = 'patient')
+# KIRC = read_tsv('C:/Users/Chinmaya/RNAseq_data/KIRC/KIRC.uncv2.mRNAseq_RSEM_all.txt') %>%
+# 	rename('gene' = `HYBRIDIZATION R`) %>% 
+# 	pivot_longer(-gene, names_to = 'patient')
+# KIRP = read_tsv('C:/Users/Chinmaya/RNAseq_data/KIRP/KIRP.uncv2.mRNAseq_RSEM_all.txt') %>%
+# 	rename('gene' = `HYBRIDIZATION R`) %>% 
+# 	pivot_longer(-gene, names_to = 'patient')
+# LGG = read_tsv('C:/Users/Chinmaya/RNAseq_data/LGG/LGG.uncv2.mRNAseq_RSEM_all.txt') %>%
+# 	rename('gene' = `HYBRIDIZATION R`) %>% 
+# 	pivot_longer(-gene, names_to = 'patient')
+# LIHC = read_tsv('C:/Users/Chinmaya/RNAseq_data/LIHC/LIHC.uncv2.mRNAseq_RSEM_all.txt') %>%
+# 	rename('gene' = `HYBRIDIZATION R`) %>% 
+# 	pivot_longer(-gene, names_to = 'patient')
+# LUAD = read_tsv('C:/Users/Chinmaya/RNAseq_data/LUAD/LUAD.uncv2.mRNAseq_RSEM_all.txt') %>%
+# 	rename('gene' = `HYBRIDIZATION R`) %>% 
+# 	pivot_longer(-gene, names_to = 'patient')
+# LUSC = read_tsv('C:/Users/Chinmaya/RNAseq_data/LUSC/LUSC.uncv2.mRNAseq_RSEM_all.txt') %>%
+# 	rename('gene' = `HYBRIDIZATION R`) %>% 
+# 	pivot_longer(-gene, names_to = 'patient')
+# MESO = read_tsv('C:/Users/Chinmaya/RNAseq_data/MESO/MESO.uncv2.mRNAseq_RSEM_all.txt') %>%
+# 	rename('gene' = `HYBRIDIZATION R`) %>% 
+# 	pivot_longer(-gene, names_to = 'patient')
+# PAAD = read_tsv('C:/Users/Chinmaya/RNAseq_data/PAAD/PAAD.uncv2.mRNAseq_RSEM_all.txt') %>%
+# 	rename('gene' = `HYBRIDIZATION R`) %>% 
+# 	pivot_longer(-gene, names_to = 'patient')
+# SARC = read_tsv('C:/Users/Chinmaya/RNAseq_data/SARC/SARC.uncv2.mRNAseq_RSEM_all.txt') %>%
+# 	rename('gene' = `HYBRIDIZATION R`) %>% 
+# 	pivot_longer(-gene, names_to = 'patient')
+# SKCM = read_tsv('C:/Users/Chinmaya/RNAseq_data/SKCM/SKCM.uncv2.mRNAseq_RSEM_all.txt') %>%
+# 	rename('gene' = `HYBRIDIZATION R`) %>% 
+# 	pivot_longer(-gene, names_to = 'patient')
+
+TCGA_metadata = read_csv(here('data/Clinical_Data/TCGA/patient_RNAseq_Metadata_TCGA.csv'))
+```
+```{r}
+All_TCGA_filtered = All_TCGA_data %>%
+		separate(patient, into = c('patient_barcode', 'patient_sample_number'), sep="-0") %>% 
+		mutate(patient_barcode = tolower(patient_barcode)) %>% 
+		filter(patient_barcode %in% TCGA_metadata$patient_barcode)
+```
+
+```{r}
+# All_TCGA_filtered = read.csv(here('data/Clinical_Data/TCGA/all_matched_TCGA_data.csv'))
+# TCGA_metadata = read_csv(here('data/Clinical_Data/TCGA/patient_RNAseq_Metadata_TCGA.csv'))
+# 
+# # ensembl = biomaRt::useEnsembl("genes",dataset="hsapiens_gene_ensembl")
+# # entrez_to_hgnc = biomaRt::getBM(attributes = c('entrezgene_id', 
+# # 																											 'hgnc_symbol'), 
+# # 																				mart = ensembl) %>% 
+# # 	mutate(entrezgene_id = as.character(entrezgene_id))
+# # entrez_to_hgnc[entrez_to_hgnc == "" | entrez_to_hgnc == " "] <- NA
+# 			
+# # write_csv(entrez_to_hgnc, here('data/Clinical_Data/TCGA/entrez_to_hgnc.csv'))
+# entrez_to_hgnc = read_csv(here('data/Clinical_Data/TCGA/entrez_to_hgnc.csv'))
+# 		
+# All_TCGA_filtered_hgnc = All_TCGA_filtered %>% 
+# 	separate(gene, into = c('entrezgene_acc', 'entrezgene_id'), sep = "\\|") %>%
+# 	left_join(entrez_to_hgnc, by = 'entrezgene_id') %>% 
+# 	dplyr::select(-entrezgene_id, -entrezgene_acc) %>% 
+# 	dplyr::filter(!is.na(hgnc_symbol)) %>% 
+# 	dplyr::mutate('patient_sample' = paste(patient_barcode,"_", patient_sample_number)) %>% 
+# 	dplyr::select(-patient_barcode, -patient_sample_number)
+# 
+# gene_duplicates = All_TCGA_filtered_hgnc %>% 
+# 	count(patient_sample, hgnc_symbol)
+# 	
+# All_TCGA_filtered_hgnc_unique = All_TCGA_filtered_hgnc %>% 
+# 	group_by(patient_sample, hgnc_symbol) %>% 
+# 	summarise(sum_value = sum(value))
+# 
+# gene_duplicates_post_sum = All_TCGA_filtered_hgnc_unique %>% 
+# 	count(patient_sample, hgnc_symbol)
+# 
+# All_TCGA_filtered_hgnc_wide = All_TCGA_filtered_hgnc_unique %>% 
+# 	pivot_wider(names_from = hgnc_symbol, values_from = sum_value) %>% 
+# 	separate(patient_sample, into = c('patient_barcode', 'patient_sample_number'), sep = "_") %>% 
+# 	filter(patient_sample_number != " 6") %>% 
+# 	dplyr::select(-patient_sample_number)
+# 
+# 	
+# write_csv(All_TCGA_filtered_hgnc_wide, here('data/Clinical_Data/TCGA/All_matched_TCGA_wide.csv'))
+# 
+# All_TCGA_for_ML = All_TCGA_filtered_hgnc_wide %>% 
+# 	left_join(TCGA_metadata, by = 'patient_barcode') %>% 
+# 	rename('sample_id' = patient_barcode)
+# 
+# write_csv(All_TCGA_for_ML, here('data/Clinical_Data/TCGA/All_TCGA_for_ml.csv'))
+
+```
+
+```{r}
+All_TCGA_filtered = read.csv(here('data/Clinical_Data/TCGA/all_matched_TCGA_data.csv'))
+TCGA_metadata = read_csv(here('data/Clinical_Data/TCGA/patient_RNAseq_Metadata_TCGA.csv'))
+
+
+#Conversion to TPM
+TCGA_sums = All_TCGA_filtered %>% 
+	dplyr::mutate('patient_sample' = paste(patient_barcode,"_", patient_sample_number)) %>%
+	group_by(patient_sample) %>% 
+	summarise('TPM_sum' = sum(value)) %>% 
+	mutate('scaling_factor' = 1000000/TPM_sum)
+
+All_TCGA_filtered_TPM = All_TCGA_filtered %>% 
+	mutate('patient_sample' = paste(patient_barcode,"_", patient_sample_number)) %>%
+	left_join(TCGA_sums, by = 'patient_sample') %>% 
+	mutate('TPM' = value*scaling_factor) %>% 
+	dplyr::select(-value, -TPM_sum, -scaling_factor)
+
+TCGA_post_TPM_sums = All_TCGA_filtered_TPM %>% 
+	group_by(patient_sample) %>% 
+	summarise('TPM_sum' = sum(TPM))
+```
+
+```{r}
+#Entrez to HGNC conversion 
+
+entrez_to_hgnc = read_csv(here('data/Clinical_Data/TCGA/entrez_to_hgnc.csv')) %>% 
+	mutate(entrezgene_id = as.character(entrezgene_id))
+entrez_to_hgnc[entrez_to_hgnc == "" | entrez_to_hgnc == " "] <- NA
+
+All_TCGA_filtered_TPM_hgnc = All_TCGA_filtered_TPM %>% 
+	separate(gene, into = c('entrezgene_acc', 'entrezgene_id'), sep = "\\|") %>% 
+	left_join(entrez_to_hgnc, by = 'entrezgene_id') %>% 
+	dplyr::select(-entrezgene_id, -entrezgene_acc) %>% 
+	dplyr::filter(!is.na(hgnc_symbol)) %>% 
+	dplyr::select(-patient_barcode, -patient_sample_number)
+
+TCGA_post_hgnc_TPM_sums = All_TCGA_filtered_TPM_hgnc %>% 
+	group_by(patient_sample) %>% 
+	summarise('TPM_sum' = sum(TPM)) %>% 
+	mutate('percentage_lost' = (1000000 - TPM_sum)/1000000*100)
+```
+
+```{r}
+#prepping dataset for ml
+
+All_TCGA_filtered_hgnc_summed = All_TCGA_filtered_TPM_hgnc %>% 
+	group_by(patient_sample, hgnc_symbol) %>% 
+	summarise(sum_TPM = sum(TPM)) %>% 
+	filter(patient_sample != 'tcga-si-a71o _ 6') %>% 
+	separate(patient_sample, into = c('patient_barcode', 'patient_sample_number'), sep = "_")
+
+# All_TCGA_filtered_hgnc_wide = All_TCGA_filtered_hgnc_unique %>% 
+# 	pivot_wider(names_from = hgnc_symbol, values_from = sum_TPM) %>%
+# 	filter(patient_sample != 'tcga-si-a71o _ 6') %>% 
+# 	separate(patient_sample, into = c('patient_barcode', 'patient_sample_number'), sep = "_") %>% 
+# 	dplyr::select(-patient_sample_number)
+
+All_TCGA_for_ML = All_TCGA_filtered_hgnc_summed %>%
+	mutate(patient_barcode = trimws(patient_barcode)) %>% 
+	left_join(TCGA_metadata, by = 'patient_barcode') %>% 
+	rename('sample_id' = patient_barcode, 'TPM' = sum_TPM) %>% 
+	dplyr::select(-bcr_drug_barcode, -bcr_drug_uuid, -measure_of_response) %>% 
+	#summarizing to the patient level (some patients have multiple cancer types)
+	group_by(sample_id, patient_sample_number, hgnc_symbol, drug_name, binary_response) %>% 
+	summarise(mean_TPM = mean(TPM)) %>% 
+	ungroup() %>%
+	rename('TPM' = mean_TPM) %>% 
+	pivot_wider(names_from = hgnc_symbol, values_from = TPM) %>% 
+	dplyr::select(-patient_sample_number)
+
+All_TCGA_for_ML_long = All_TCGA_for_ML %>% 
+	pivot_longer(A1BG:ZZZ3, names_to = 'gene', values_to = 'TPM')
+
+write_csv(All_TCGA_for_ML, here('data/Clinical_Data/TCGA/All_TCGA_for_ml.csv'))
+
+#seeing how many model genes are in there
+model_genes = read_csv(here('data/exp_genes_in_model.csv'))
+
+TCGA_genes = TCGA_model_matched_genes = All_TCGA_for_ML_long	%>% 
+	dplyr::select(gene) %>%  
+	unique()
+
+TCGA_model_matched_genes = All_TCGA_for_ML_long	%>% 
+	dplyr::select(gene) %>%  
+	unique() %>% 
+	filter(gene %in% model_genes$gene)
+
+TCGA_model_unmatched_genes = model_genes %>% 
+	filter(!gene %in% TCGA_model_matched_genes$gene) %>% 
+	left_join(entrez_to_hgnc, by = c('gene' = 'hgnc_symbol')) %>% 
+	dplyr::select(-type)
+
+write_csv(TCGA_model_unmatched_genes, here('data/Clinical_Data/TCGA/TCGA_model_unmatched_genes.csv'))
+```
+

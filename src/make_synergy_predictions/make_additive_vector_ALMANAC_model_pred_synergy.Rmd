@@ -1,5 +1,5 @@
 ---
-title: "Make Model Predictions for ALMANAC"
+title: "Make additive klaegeer vector Model Predictions for ALMANAC"
 author: "Chinmaya Joisa"
 date: "`r Sys.Date()`"
 output: github_document
@@ -25,18 +25,15 @@ klaeger_wide_matched = read_rds(here('results/klaeger_full_tidy.rds')) %>%
 	filter(drug %in% matched_ALMANAC_drugs$klaeger_name) %>% 
 	pivot_wider(names_from = act_gene_name, values_from = relative_intensity)
 
-CCLE_data = read_rds(here('results/single_model/full_CCLE_expression_set_for_ML.rds'))
+CCLE_data = read_rds(here('results/full_CCLE_expression_set_for_ML.rds'))
 
-rand_forest_model = read_rds(here('results/final_model_1500feat.rds'))
+# rand_forest_model = read_rds(here('results/final_model_1500feat.rds'))
 
-included_predictors = rand_forest_model$fit$fit$fit$forest$independent.variable.names
+#included_predictors = rand_forest_model$fit$fit$fit$forest$independent.variable.names
 
-klaeger_wide_filtered = klaeger_wide_matched %>%
-	select(drug, concentration_M, any_of(included_predictors))
-
-CCLE_data_filtered = CCLE_data %>%
-	select(DepMap_ID, any_of(included_predictors)) %>% 
-	filter(DepMap_ID %in% matched_ALMANAC_cell_lines$DepMap_ID)
+# CCLE_data_filtered = CCLE_data %>%
+# 	select(DepMap_ID, any_of(included_predictors)) %>% 
+# 	filter(DepMap_ID %in% matched_ALMANAC_cell_lines$DepMap_ID)
 
 sample_info = read_csv(here('data/CCLE_data/sample_info.csv')) %>%
 	mutate(cell_line_name_extra = paste0(cell_line_name, "\n",lineage_subtype, "\n",lineage_sub_subtype))
@@ -51,6 +48,12 @@ toc()
 
 ```{r}
 
+# input_drug_1 = possible_klaeger_combos$drug_1[68]
+# input_drug_2 = possible_klaeger_combos$drug_2[68]
+# input_conc_1 = possible_klaeger_combos$concentration_M_d1[68]
+# input_conc_2 = possible_klaeger_combos$concentration_M_d2[68]
+
+
 calc_klaeger_combo_truncated <- function(input_drug_1, input_drug_2, input_conc_1, input_conc_2) {
 	
 	klaeger_combo = bind_rows(
@@ -63,96 +66,41 @@ calc_klaeger_combo_truncated <- function(input_drug_1, input_drug_2, input_conc_
 		select(-concentration_M) %>%
 		pivot_wider(names_from = drug, values_from = value) %>% 
 		rename('X1' = input_drug_1, 'X2' = input_drug_2) %>% 
-		mutate(lowest_value = if_else(
-			X1 > X2,
-			X2,
-			X1
+		mutate(perc_inhibition_1 = 1-X1,
+					 perc_inhibition_2 = 1-X2,
+			highest_value = if_else(
+			perc_inhibition_1 > perc_inhibition_2,
+			perc_inhibition_1,
+			perc_inhibition_2
 		),
-		combo_value = if_else(
-			X1 >= 1 & X2 >= 1, 
-			lowest_value,
-			X1*X2
+		sum = perc_inhibition_1 + perc_inhibition_2,
+		combo_value = case_when(
+			perc_inhibition_1 < 0 | perc_inhibition_2 < 0 ~ highest_value,
+			(perc_inhibition_1 + perc_inhibition_2) >= 1 ~ 1,
+			T ~ sum
 		)) %>% 
-		select(-lowest_value, -X1, -X2) %>% 
+		mutate(combo_value = 1 - combo_value) 
+		select(kinase, combo_value) %>% 
 		pivot_wider(names_from = kinase, values_from = combo_value)
 	
 	return(klaeger_combo)
 }
 
-drug_list = sort(unique(klaeger_wide_filtered$drug))
+drug_list = sort(unique(klaeger_wide_matched$drug))
 
 possible_klaeger_combos = crossing(
 	drug_1 = drug_list,
 	drug_2 = drug_list,
-	concentration_M_d1 = unique(klaeger_wide_filtered$concentration_M),
-	concentration_M_d2 = unique(klaeger_wide_filtered$concentration_M)
+	concentration_M_d1 = unique(klaeger_wide_matched$concentration_M),
+	concentration_M_d2 = unique(klaeger_wide_matched$concentration_M)
 ) %>% filter(drug_1 > drug_2)
 
 klaeger_combo_sets = possible_klaeger_combos %>% 
 	mutate(klaeger_combo = pmap(list(drug_1,drug_2,concentration_M_d1,concentration_M_d2),calc_klaeger_combo_truncated)) %>%
 	unnest(klaeger_combo) %>%
-	# write_rds(here('results/synergy_pred/klaeger_synergy_combos.rds'), compress = 'gz')
-	identity()
+	write_rds(here('results/synergy_pred/ALMANAC_klaeger_synergy_combos_additive.rds'))
 
 ```
-
-```{r}
-
-tic()
-
-# 	drug_list = sort(unique(klaeger_wide_matched$drug))
-# 	
-# 	possible_klaeger_combos = crossing(
-# 		drug_1 = drug_list,
-# 		drug_2 = drug_list,
-# 		concentration_M_d1 = unique(klaeger_wide_matched$concentration_M),
-# 		concentration_M_d2 = unique(klaeger_wide_matched$concentration_M)
-# 	) %>% filter(drug_1 > drug_2)
-# 	
-# klaeger_combo_sets = possible_klaeger_combos %>% 
-# 	slice_sample(2) %>% 
-# 		mutate(klaeger_combo = pmap(list(drug_1, drug_2, input_conc_1, input_conc_2), calc_klaeger_combo_truncated))
-# 	
-# klaeger_combo_sets_pmap = possible_klaeger_combos %>% 
-# 	rename('input_drug_1' = drug_1,
-# 				 'input_drug_2' = drug_2,
-# 				 'input_conc_1' = concentration_M_d1,
-# 				 'input_conc_2' = concentration_M_d2) %>% 
-# 	mutate(klaeger_combo = pmap(list(input_drug_1, input_drug_2, input_conc_1, input_conc_2), calc_klaeger_combo_truncated))
-# 
-# klaeger_combo_sets = pmap(klaeger_combo_sets_for_pmap, calc_klaeger_combo_truncated)
-# 	
-# 
-# 	klaeger_combo_sets = data.frame()
-for (i in 1:dim(possible_klaeger_combos)[1]) {
-	
-	klaeger_combo = data.frame()
-	input_drug_1 = possible_klaeger_combos[[i,1]]
-	input_drug_2 = possible_klaeger_combos[[i,2]]
-	input_conc_1 = possible_klaeger_combos[[i,3]]
-	input_conc_2 = possible_klaeger_combos[[i,4]]
-	
-	
-	this_combo_set = data.frame() %>% 
-		mutate(drug_1 = possible_klaeger_combos[[i,1]],
-					 drug_2 = input_drug_2,
-					 concentration_M_d1 = input_conc_1, 
-					 concentration_M_d2 = input_conc_2)
-	calc_klaeger_combo_truncated(
-		input_drug_1,
-		input_drug_2,
-		input_conc_1,
-		input_conc_2
-	) 
-	
-	klaeger_combo_sets = bind_rows(klaeger_combo_sets, this_combo_set)
-}	
-
-write_rds(here('results/synergy_pred/klaeger_synergy_combos.rds'))
-
-toc()
-```
-
 
 ```{r}
 dir.create(here('results/synergy_pred/per_cell_line'), showWarnings = F)

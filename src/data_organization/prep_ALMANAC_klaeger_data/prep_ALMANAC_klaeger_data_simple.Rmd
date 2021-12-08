@@ -1,0 +1,154 @@
+---
+title: "prep_simple_ALMANAC_klaeger_data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(purrr)
+```
+
+```{r}
+#read in data 
+
+ALMANAC = read_csv(here('results/synergy_predictions/ALMANAC_processed.csv'))
+matched_ALMANAC_drugs = read_csv(here('src/data_organization/find_ALMANAC_klaeger_matches/ALMANAC_klaeger_matchlist.csv'))
+CCLE_data = read_rds(here('results/full_CCLE_expression_set_for_ML.rds'))
+ALMANAC_PRISM_cell_line_matches = read_csv(here('src/data_organization/find_ALMANAC_klaeger_matches/manual_matched_cell_lines.csv'))
+klaeger_combinations = klaeger_synergy_combos_simple %>% 
+	filter(drug_1 %in% matched_ALMANAC_drugs$klaeger_name | drug_2 %in% matched_ALMANAC_drugs$klaeger_name)
+
+```
+
+```{r}
+#matching doses
+klaeger_doses = klaeger_combinations %>% 
+	select(concentration_M_d1, concentration_M_d2) %>% 
+	unique()
+
+ALMANAC_cell_line_matched = ALMANAC %>%
+	left_join(ALMANAC_PRISM_cell_line_matches, by = c('CELLNAME' = 'ALMANAC_NAME')) %>% 
+	select(-PRISM_NAME) %>% 
+	filter(DepMap_ID %in% CCLE_data$DepMap_ID) %>% 
+	select(CELLNAME, CONC1, CONC2, viability, drug1, drug2, DepMap_ID)
+
+ALMANAC_doses = ALMANAC_cell_line_matched %>% 
+	group_by(CONC1, CONC2) %>% 
+	summarise(n = n())
+
+dose_matches = ALMANAC_doses %>% 
+	inner_join(klaeger_doses, by = c('CONC1' = 'concentration_M_d2', 'CONC2' = 'concentration_M_d1'))
+	
+write_csv(dose_matches, here('results/synergy_predictions/ALMANAC_klaeger_dose_matches.csv'))
+```
+
+```{r}
+#find nearest concentrations for matching
+
+ALMANAC_unique_doses_1 = ALMANAC_doses %>%
+	ungroup() %>% 
+	select(CONC1) %>%
+	rename(conc = CONC1) %>% 
+	unique()
+ALMANAC_unique_doses_2 = ALMANAC_doses %>%
+	ungroup() %>% 
+	select(CONC2) %>% 
+	rename(conc = CONC2) %>% 
+	unique()
+ALMANAC_unique_doses = bind_rows(
+	ALMANAC_unique_doses_1, ALMANAC_unique_doses_2
+) %>% 
+	unique()
+
+klaeger_unique_doses = klaeger_doses %>% 
+	select(concentration_M_d1) %>% 
+	rename(conc = concentration_M_d1) %>% 
+	unique()
+
+matched_doses = ALMANAC_unique_doses %>% 
+	filter(conc %in% klaeger_unique_doses$conc) %>% 
+	mutate(klaeger_conc = conc)
+
+ALMANAC_unmatched_doses = ALMANAC_unique_doses %>% 
+	filter(!conc %in% matched_doses$conc)
+
+nearest_klaeger_concentration = function(concentration, all_klaeger_concentrations) {
+differences = all_klaeger_concentrations %>% 
+	filter(conc != 0) %>% 
+	mutate('difference' = abs(conc - concentration)) %>%  
+	arrange(difference) 
+min_difference = differences$conc[1]
+return(min_difference)
+}
+
+ALMANAC_nearest_klaeger_doses = ALMANAC_unmatched_doses %>% 
+	mutate(nearest_klaeger_dose = map(conc, ~nearest_klaeger_concentration(., klaeger_unique_doses))) %>% 
+	as.data.frame() %>% 
+	unnest(cols = c(nearest_klaeger_dose))
+
+write_csv(ALMANAC_nearest_klaeger_doses, here('results/synergy_predictions/ALMANAC_nearest_klaeger_doses.csv'))
+
+```
+
+```{r}
+
+ALMANAC_combos = ALMANAC_cell_line_matched %>% 
+	select(drug1, drug2) %>% 
+	unique() %>% 
+	filter(drug1 > drug2)
+
+ALMANAC_cell_line_matched_unique = data.frame()
+for (i in 1:dim(ALMANAC_combos)[1]) {
+	this_drug_1 = ALMANAC_combos$drug1[i]
+	this_drug_2 = ALMANAC_combos$drug2[i]
+
+	this_data = ALMANAC_cell_line_matched %>% 
+		filter(drug1 == this_drug_1 | drug2 == this_drug_1) %>% 
+		filter(drug1 == this_drug_2 | drug2 == this_drug_2) %>% 
+		group_by(DepMap_ID, CELLNAME, CONC1, CONC2) %>%
+		summarise(viability = mean(viability)) %>% 
+		mutate(drug1 = this_drug_1, drug2 = this_drug_2) %>% 
+		select(CELLNAME, DepMap_ID, drug1, drug2, CONC1, CONC2, viability)
+
+	ALMANAC_cell_line_matched_unique = bind_rows(ALMANAC_cell_line_matched_unique, this_data)	%>% 
+		unique()
+	
+}
+
+ALMANAC_klaeger_data =  ALMANAC_cell_line_matched_unique %>%
+	left_join(ALMANAC_nearest_klaeger_doses, by = c('CONC1' = 'conc')) %>% 
+	rename(nearest_klaeger_dose_1 = nearest_klaeger_dose) %>% 
+	left_join(matched_doses, by = c('CONC1' = 'conc')) %>% 
+	mutate(nearest_klaeger_dose_1 = if_else(
+		is.na(nearest_klaeger_dose_1), 
+		klaeger_conc, 
+		nearest_klaeger_dose_1
+	)) %>% 
+	select(-klaeger_conc) %>% 
+	left_join(ALMANAC_nearest_klaeger_doses, by = c('CONC2' = 'conc')) %>% 
+	rename(nearest_klaeger_dose_2 = nearest_klaeger_dose) %>% 
+	left_join(matched_doses, by = c('CONC2' = 'conc')) %>% 
+	mutate(nearest_klaeger_dose_2 = if_else(
+		is.na(nearest_klaeger_dose_2), 
+		klaeger_conc, 
+		nearest_klaeger_dose_2
+	)) %>% 
+	select(-klaeger_conc) %>% 
+	left_join(klaeger_combinations, 
+						by = c('drug1' = 'drug_1',
+									 'drug2' = 'drug_2',
+									 'nearest_klaeger_dose_1' = 'concentration_M_d1',
+									 'nearest_klaeger_dose_2' = 'concentration_M_d2')) %>% 
+	drop_na()
+
+# ALMANAC_klaeger_data %>% count(drug1, drug2) %>% view()
+# klaeger_combinations %>% select(drug_1, drug_2) %>% unique() %>% view()
+```
+
+```{r}
+
+write_csv(ALMANAC_klaeger_data, here('results/ALMANAC_klaeger_data_for_ml_simple.csv'))
+
+```
+

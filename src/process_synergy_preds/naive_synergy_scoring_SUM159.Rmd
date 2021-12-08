@@ -1,0 +1,167 @@
+---
+title: "Naive Synergy Scores"
+author: "Matthew Berginski"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(broom)
+library(rstatix)
+library(patchwork)
+library(rayshader)
+library(conflicted)
+library(metR)
+library(attempt)
+conflict_prefer("filter", "dplyr")
+conflict_prefer("slice", "dplyr")
+conflict_prefer("if_else", "dplyr")
+# SUM159 = ACH-001391
+# HCC1806 = ACH-000624
+```
+
+
+```{r}
+#read in data
+All_preds = read_rds(here('results/model_predictions_1500feat.rds'))
+SUM159_combos = read_rds(here('results/SUM159_combo.rds')) %>% 
+	rename('pred_via' = via_pred)
+klaeger_tidy = read_rds(here('results/klaeger_full_tidy.rds'))
+
+TNBC_line_info = read_csv(here('results/TNBC_line_info.csv'))
+```
+
+```{r}
+SUM159_single_preds = All_preds %>% 
+	filter(depmap_id == 'ACH-001391') %>% 
+	select(-depmap_id)
+
+SUM159_combo_summary = SUM159_combos %>%
+	left_join(rename(SUM159_single_preds, 'single_1_pred_via' = pred_via), 
+					 by = c('drug_1' = 'drug' ,'concentration_M_d1' = 'concentration_M')) %>% 
+	left_join(rename(SUM159_single_preds, 'single_2_pred_via' = pred_via), 
+					 by = c('drug_2' = 'drug' ,'concentration_M_d2' = 'concentration_M')) %>% 
+	filter(!(is.na(single_1_pred_via) & is.na(single_2_pred_via))) %>% 
+  replace_na(list(single_1_pred_via = 1, single_2_pred_via = 1)) %>% 
+  mutate('Expected_Growth' = single_1_pred_via*single_2_pred_via) %>% 
+  mutate(score = Expected_Growth - pred_via) %>% 
+  mutate(least_value  = if_else(
+    single_1_pred_via >= single_2_pred_via,
+    single_2_pred_via,
+    single_1_pred_via)) %>% 
+  mutate(ALMANAC_Expected_Growth = if_else(
+    (single_1_pred_via > 1 | single_2_pred_via > 1), 
+    least_value,
+    single_1_pred_via*single_2_pred_via
+  )) %>% 
+  select(-least_value) %>% 
+  mutate(ALMANAC_score = ALMANAC_Expected_Growth - pred_via)
+```
+
+```{r}
+#plotting
+get_dose_synergy_plots_for_query_drugs = function(query_drug_1, 
+																			 query_drug_2, 
+																			 cell_synergy_summary) {
+	cell_synergy_summary %>%
+	filter(drug_1 == query_drug_1 & query_drug_2 == drug_2) %>%
+	ggplot(aes(as.character(concentration_M_d1), pred_via, colour = as.factor(concentration_M_d2))) +
+	geom_line() +
+	geom_point() +
+	scale_color_viridis_d() +
+	ggtitle(paste0(query_drug_1,"+",query_drug_2))
+}
+
+
+get_score_heatmap = function(query_drug_1, query_drug_2, cell_synergy_summary) {
+
+	cell_synergy_summary %>%
+	filter(drug_1 == query_drug_1 & query_drug_2 == drug_2) %>%
+	ggplot(aes(as.factor(concentration_M_d1), as.factor(concentration_M_d2), fill = score)) +
+	geom_raster() +
+	scale_fill_divergent() +
+	labs(x = paste0('[M] ',query_drug_1), y = paste0('[M] ',query_drug_2), title = paste0(query_drug_1,"+",query_drug_2,' ComboScore Heatmap'))
+
+}
+
+get_dose_response_heatmap = function(query_drug_1, query_drug_2, cell_synergy_summary) {
+
+	cell_synergy_summary %>%
+	filter(drug_1 == query_drug_1 & query_drug_2 == drug_2) %>%
+	ggplot(aes(as.factor(concentration_M_d1), as.factor(concentration_M_d2), fill = pred_via)) +
+	geom_raster() +
+	scale_fill_gradient() +
+	labs(x = paste0('[M] ',query_drug_1), y = paste0('[M] ',query_drug_2), title = paste0(query_drug_1,"+",query_drug_2,' Dose Response Heatmap'))
+
+}
+
+get_dose_synergy_plots_for_query_drugs(query_drug_1 = 'UCN-01', query_drug_2 = 'PF-03814735', cell_synergy_summary = SUM159_combo_summary)
+
+get_dose_response_heatmap(query_drug_1 = 'UCN-01', query_drug_2 = 'PF-03814735', cell_synergy_summary = SUM159_combo_summary)
+
+x = get_score_heatmap(query_drug_1 = 'Bosutinib', query_drug_2 = 'AT-9283', cell_synergy_summary = SUM159_combo_summary)
+```
+
+```{r}
+#Score all TNBC lines
+TNBC_data_table = TNBC_line_info %>% 
+	select(DepMap_ID) %>% 
+	mutate(file = here('results/synergy_predictions/per_cell_line/', paste0(DepMap_ID, '.rds')))
+
+All_TNBC_synergy_data = data.frame()
+for(i in 1:dim(TNBC_data_table)[1]) {
+	this_TNBC_data = read_rds(TNBC_data_table$file[i])
+		All_TNBC_synergy_data = bind_rows(All_TNBC_synergy_data, this_TNBC_data)
+}
+
+
+All_TNBC_single_preds = All_preds %>% 
+	filter(depmap_id %in% TNBC_data_table$DepMap_ID)
+
+TNBC_combo_summary = All_TNBC_synergy_data %>%
+  rename(pred_via = via_pred) %>%
+  #join in single predictions
+	left_join(rename(All_TNBC_single_preds, 'single_1_pred_via' = pred_via), 
+					 by = c('drug_1' = 'drug' ,
+					        'concentration_M_d1' = 'concentration_M', 
+					        'DepMap_ID' = 'depmap_id')) %>% 
+	left_join(rename(All_TNBC_single_preds, 'single_2_pred_via' = pred_via), 
+					 by = c('drug_2' = 'drug' ,
+					        'concentration_M_d2' = 'concentration_M', 
+					        'DepMap_ID' = 'depmap_id'))  
+  #impute 0 + 0 combination as 1
+  mutate(double_zero = if_else(
+    concentration_M_d1 == 0 & concentration_M_d2 == 0, 
+    'TRUE', 
+    'FALSE'
+  )) %>% 
+  mutate(pred_via = if_else(
+    double_zero == 'TRUE', 
+    1,
+    pred_via
+  )) %>% 
+  replace_na(list(single_1_pred_via = 1, single_2_pred_via = 1)) %>% 
+  mutate('Expected_Growth' = single_1_pred_via*single_2_pred_via) %>% 
+  mutate(score = Expected_Growth - pred_via) %>% 
+  mutate(least_value  = if_else(
+    single_1_pred_via >= single_2_pred_via,
+    single_2_pred_via,
+    single_1_pred_via)) %>% 
+  mutate(ALMANAC_Expected_Growth = if_else(
+    (single_1_pred_via > 1 | single_2_pred_via > 1), 
+    least_value,
+    single_1_pred_via*single_2_pred_via
+  )) %>% 
+  select(-least_value) %>% 
+  mutate(ALMANAC_score = ALMANAC_Expected_Growth - pred_via)
+
+temp = TNBC_combo_summary %>% 
+  filter(is.na(single_1_pred_via))
+
+temp_2 = All_preds %>% 
+  filter(drug == 'AC-480', depmap_id == 'ACH-000019')
+```
+
+

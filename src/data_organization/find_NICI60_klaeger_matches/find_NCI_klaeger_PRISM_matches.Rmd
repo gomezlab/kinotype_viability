@@ -1,0 +1,185 @@
+---
+title: "Find ALMANAC-Klaeger Drug Matches"
+author: "Chinmaya Joisa"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(readxl)
+library(webchem)
+library(tictoc)
+```
+
+```{r}
+#READING IN DATA
+klaeger = read_rds(here('results/klaeger_full_tidy.rds'))
+
+NCI60_SIDs = read_csv(here('data/NCI60/NSC_PubChemSID.csv'), col_names = FALSE)
+
+PRISM = read_csv(here('data/PRISM/secondary/secondary-screen-replicate-treatment-info.csv'))
+```
+
+```{r}
+#DATA PROCESSING
+NCI60_SID_list = NCI60_SIDs %>% 
+	select(X2) %>% 
+	rename('PubChemSID' = X2)
+
+NCI60_NSC_to_SID = NCI60_SIDs %>% 
+	rename('NSC' = X1 ,'PubChemSID' = X2)
+```
+
+```{r}
+#CREATING MATCH SETS
+
+klaeger_cids = get_cid(unique(klaeger$drug), from = "name", domain = "compound", match = "all", verbose = TRUE) %>% 
+	rename("klaeger_name" = query) 
+
+klaeger_cids_manual = klaeger_cids %>% 
+	mutate(cid = case_when(klaeger_name == 'Brivanib_alaninate' ~ '11154925',
+												 klaeger_name == 'SU-14813'  ~ '10138259', 
+												 TRUE ~ as.character(cid))) %>% 
+	filter(klaeger_name != 'RDEA-436')
+write_csv(klaeger_cids_manual, here('results/klaeger_cids.csv'))
+
+klaeger_sids = cts_convert(
+	klaeger_cids_manual$cid,
+	from = "pubchem cid",
+	to = "pubchem sid", 
+	match = "all",
+	verbose = TRUE
+)
+
+compound_cid = paste0(klaeger_cids_manual[1,2])
+
+temp = as_tibble_col(klaeger_sids[[1]]) %>% 
+	rename(!!compound_cid := value)
+
+temp2 = klaeger_cids_manual[1,2]
+
+klaeger_cids_to_sids = data.frame()
+
+i = 1
+for (i in 1:dim(klaeger_cids_manual)[1]) {
+compound_cid = paste0(klaeger_cids_manual[i,2])
+
+temp = as_tibble_col(klaeger_sids[[i]]) %>% 
+	rename(!!compound_cid := value) %>% 
+	mutate(sid = paste0('sid_', row_number())) %>% 
+	pivot_wider(-compound_cid, names_from = sid, values_from = compound_cid) %>% 
+	mutate(cid = compound_cid)
+
+klaeger_cids_to_sids = bind_rows(klaeger_cids_to_sids, temp)
+}
+
+klaeger_cids_to_sids_long = klaeger_cids_to_sids %>% 
+	pivot_longer(-cid, names_to = 'sid_number', values_to = 'sid') %>% 
+	filter(!is.na(sid)) %>% 
+	select(-sid_number)
+	
+# NCI_cids = get_cid(unique(NCI60_SID_list_sample$PubChemSID), from = "sid", domain = "substance", match = "all", verbose = TRUE) %>% 
+# 	rename('NCI_SID' = query )
+NCI_cids = read_csv(here('results/NCI60_all_compound_CIDS.csv'))
+
+PRISM_match_set = PRISM %>%
+	select(broad_id, name) %>%
+	mutate(name = trimws(name)) %>%
+	unique() %>%
+	filter(!is.na(name))
+	
+# PRISM_cids = get_cid(unique(PRISM_match_set$name), from = "name", domain = "compound", match = "all", verbose = TRUE)
+
+# write_csv(PRISM_cids, here('results/PRISM_cids.csv'))
+PRISM_cids = read_csv(here('results/PRISM_cids.csv')) %>% 
+	mutate(cid = as.character(cid))
+PRISM_sids = cts_convert(
+	PRISM_cids$cid,
+	from = "pubchem cid",
+	to = "pubchem sid", 
+	match = "all",
+	verbose = TRUE
+)
+
+NCI_PRISM_matches = PRISM_cids %>% 
+	left_join(mutate(NCI_cids, cid = as.character(cid)), by = 'cid') %>% 
+	filter(!(is.na(query) | is.na(cid) | is.na(NCI_SID))) %>% 
+	rename(PRISM_name = query) %>% 
+	left_join(NCI60_NSC_to_SID, by = c('NCI_SID' = 'PubChemSID'))
+
+write_csv(NCI_PRISM_matches, here('results/NCI_PRISM_matches.csv'))
+
+NCI_klaeger_matches = NCI60_NSC_to_SID %>%
+	mutate(PubChemSID = as.character(PubChemSID)) %>% 
+	left_join(klaeger_cids_to_sids_long, by = c('PubChemSID' = 'sid'))
+	
+write_csv(PRISM_klaeger_matches, here('results/PRISM_cids.csv'))
+```
+
+
+
+
+```{r}
+#CAS matching
+
+NCI_CAS = read_csv(here('data/NCI60/NSC_CAS.csv'), col_names = F) %>% 
+	rename('NSC' = X1, 'CAS' = X2)
+
+klaeger_CAS = cts_convert(
+	klaeger_cids_manual$cid,
+	from = "pubchem cid",
+	to = "cas", 
+	match = "all",
+	verbose = TRUE
+)
+
+klaeger_cids_to_CAS = data.frame()
+for (i in 1:dim(klaeger_cids_manual)[1]) {
+compound_cid = paste0(klaeger_cids_manual[i,2])
+
+temp = as_tibble_col(klaeger_CAS[[i]]) %>% 
+	rename(!!compound_cid := value) %>% 
+	mutate(CAS = paste0('CAS_', row_number())) %>% 
+	pivot_wider(-compound_cid, names_from = CAS, values_from = compound_cid) %>% 
+	mutate(cid = compound_cid)
+
+klaeger_cids_to_CAS = bind_rows(klaeger_cids_to_CAS, temp)
+}
+
+klaeger_cids_to_CAS_long = klaeger_cids_to_CAS %>% 
+	pivot_longer(-cid, names_to = 'CAS_number', values_to = 'CAS') %>% 
+	left_join(klaeger_cids_manual, by = 'cid') %>% 
+	mutate(CAS = case_when(
+		(klaeger_name == 'AT-9283' & CAS_number == 'CAS_1') ~ '896466-04-9',
+		(klaeger_name == 'AZD-8186' & CAS_number == 'CAS_1') ~ '1627494-13-6',
+		(klaeger_name == 'BI-847325' & CAS_number == 'CAS_1') ~ '1207293-36-4',
+		(klaeger_name == 'Copanlisib' & CAS_number == 'CAS_1') ~ '1032568-63-0',
+		(klaeger_name == 'Dovitinib' & CAS_number == 'CAS_1') ~ '405169-16-6',
+		(klaeger_name == 'Linsitinib' & CAS_number == 'CAS_1') ~ '867160-71-2',
+		(klaeger_name == 'Nintedanib' & CAS_number == 'CAS_1') ~ '656247-17-5',
+		(klaeger_name == 'OTS-167' & CAS_number == 'CAS_1') ~ '1431697-89-0',
+		(klaeger_name == 'PF-04691502' & CAS_number == 'CAS_1') ~ '1013101-36-4',
+		(klaeger_name == 'PF-477736' & CAS_number == 'CAS_1') ~ '952021-60-2',
+		(klaeger_name == 'Ro-5126766' & CAS_number == 'CAS_1') ~ '946128-88-7',
+		(klaeger_name == 'SAR-407899' & CAS_number == 'CAS_1') ~ '923359-38-0',
+		(klaeger_name == 'Tanzisertib' & CAS_number == 'CAS_1') ~ '899805-25-5',
+		(klaeger_name == 'XL-413' & CAS_number == 'CAS_1') ~ '1169558-38-6',
+		TRUE ~ CAS
+		)) %>% 
+	filter(!is.na(CAS))
+
+klaeger_NCI_CAS_matches = klaeger_cids_to_CAS_long %>% 
+	left_join(NCI_CAS, by = 'CAS') %>% 
+	filter(!is.na(NSC)) %>% 
+	select(klaeger_name, NSC) %>% 
+	unique()
+
+write_csv(klaeger_NCI_CAS_matches, here('results/klaeger_NCI_CAS_matches.csv'))
+write_csv(klaeger_cids_manual, here('results/klaeger_cids.csv'))
+write_csv(klaeger_cids_to_CAS_long, here('results/klaeger_cids_to_CAS.csv'))
+```
+
+
+

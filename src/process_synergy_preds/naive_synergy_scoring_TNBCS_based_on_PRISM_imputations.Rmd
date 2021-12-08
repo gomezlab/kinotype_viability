@@ -1,0 +1,240 @@
+---
+title: "Naive Synergy Scores based on PRISM imputations"
+author: "Chinmaya Joisa"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(broom)
+library(rstatix)
+library(patchwork)
+library(rayshader)
+library(conflicted)
+library(metR)
+library(attempt)
+conflict_prefer("filter", "dplyr")
+conflict_prefer("slice", "dplyr")
+conflict_prefer("if_else", "dplyr")
+# SUM159 = ACH-001391
+# HCC1806 = ACH-000624
+```
+
+
+```{r}
+#read in data
+PRISM_imputed = read_rds(here('results/PRISM_klaeger_imputed_tidy.rds'))
+klaeger_tidy = read_rds(here('results/klaeger_full_tidy.rds'))
+TNBC_line_info = read_csv(here('results/TNBC_line_info.csv'))
+SUM159_combos = read_rds(here('results/SUM159_combo.rds'))
+sample_info = read_csv(here('data/CCLE_data/sample_info.csv'))
+```
+
+```{r}
+#function for processing synergy predictions
+
+PRISM_TNBC_cell_lines = PRISM_imputed %>% 
+	ungroup() %>% 
+	select(depmap_id) %>% 
+	unique() %>% 
+	filter(depmap_id %in% TNBC_line_info$DepMap_ID)
+
+TNBC_data_table = PRISM_TNBC_cell_lines %>% 
+	select(depmap_id) %>% 
+	mutate(file = here('results/synergy_predictions/per_cell_line/', paste0(depmap_id, '.rds')))
+
+All_TNBC_synergy_data_PRISM_matched = data.frame()
+for(i in 1:dim(TNBC_data_table)[1]) {
+	this_TNBC_data = read_rds(TNBC_data_table$file[i])
+		All_TNBC_synergy_data_PRISM_matched = bind_rows(All_TNBC_synergy_data_PRISM_matched, this_TNBC_data)
+}
+
+query_depmap_id = 'ACH-000019'
+All_synergy_data = All_TNBC_synergy_data_PRISM_matched
+
+get_naive_synergy_scores = function(query_depmap_id, All_synergy_data) {
+ 
+this_synergy_predictions_file = All_synergy_data %>%
+	rename(depmap_id = DepMap_ID) %>% 
+	filter(depmap_id == query_depmap_id) %>% 
+	rename('pred_via' = via_pred)
+
+this_single_preds = PRISM_imputed %>% 
+	filter(depmap_id == query_depmap_id)
+
+this_single_preds_zeros = PRISM_imputed %>% 
+	select(depmap_id, drug) %>% 
+	unique() %>% 
+	mutate(klaeger_conc = 0) %>% 
+	mutate(imputed_viability = 1)
+
+this_single_preds_complete = bind_rows(this_single_preds, this_single_preds_zeros)
+
+
+this_combo_summary = this_synergy_predictions_file %>%
+  #join in single predictions
+	inner_join(rename(this_single_preds_complete, 'single_1_pred_via' = imputed_viability), 
+					 by = c('drug_1' = 'drug' ,
+					        'concentration_M_d1' = 'klaeger_conc', 
+					        'depmap_id')) %>% 
+	inner_join(rename(this_single_preds_complete, 'single_2_pred_via' = imputed_viability), 
+					 by = c('drug_2' = 'drug' ,
+					        'concentration_M_d2' = 'klaeger_conc', 
+					        'depmap_id')) %>% 
+	#impute double zeros
+	mutate(pred_via = case_when(
+		(concentration_M_d1 == 0 & concentration_M_d2 == 0) ~ 1,
+		TRUE ~ pred_via
+	)) %>% 
+  mutate('Expected_Growth' = single_1_pred_via*single_2_pred_via) %>% 
+  mutate(score = Expected_Growth - pred_via) %>% 
+  mutate(least_value  = if_else(
+    single_1_pred_via >= single_2_pred_via,
+    single_2_pred_via,
+    single_1_pred_via)) %>% 
+  mutate(ALMANAC_Expected_Growth = if_else(
+    (single_1_pred_via > 1 | single_2_pred_via > 1), 
+    least_value,
+    single_1_pred_via*single_2_pred_via
+  )) %>% 
+  select(-least_value) %>% 
+  mutate(ALMANAC_score = ALMANAC_Expected_Growth - pred_via) %>% 
+	filter(ALMANAC_Expected_Growth <= 1)
+
+return(this_combo_summary)
+}
+```
+
+```{r}
+All_TNBC_synergy_scores_PRISM_reality= data.frame()
+for(i in 1:dim(TNBC_data_table)[1]) {
+	this_TNBC_scores = get_naive_synergy_scores(query_depmap_id = TNBC_data_table$depmap_id[i], All_synergy_data = All_TNBC_synergy_data)
+		All_TNBC_synergy_scores_PRISM_reality = bind_rows(All_TNBC_synergy_scores_PRISM_reality, this_TNBC_scores)
+}
+
+combo_indexes = All_TNBC_synergy_scores_PRISM_reality %>% 
+	select(depmap_id, drug_1, drug_2) %>% 
+	unique() %>% 
+	mutate(combo_index = 1:n())
+
+All_TNBC_synergy_scores_PRISM_reality_summary = All_TNBC_synergy_scores_PRISM_reality %>% 
+	left_join(select(TNBC_line_info, DepMap_ID, stripped_cell_line_name), by = c('depmap_id' = 'DepMap_ID')) %>% 
+	left_join(combo_indexes, by = c('depmap_id', 'drug_1', 'drug_2')) %>% 
+	select(stripped_cell_line_name, depmap_id, combo_index, drug_1, drug_2, concentration_M_d1, concentration_M_d2, pred_via, single_1_pred_via, single_2_pred_via, ALMANAC_Expected_Growth, ALMANAC_score)
+
+write_csv(All_TNBC_synergy_scores_PRISM_reality_summary, here('results/All_PRISM_imputed_based_complete_TNBC_lines_synergy_scores.csv'))
+```
+
+
+```{r}
+#plotting
+
+# query_combo_index = 112059
+# all_synergy_summary_dataset = All_TNBC_synergy_scores_summary
+# 
+# get_dose_response_plots_for_query_drugs = function(query_combo_index, all_synergy_summary_dataset) {
+# 
+# 	this_summary = all_synergy_summary_dataset %>%
+# 		filter(combo_index == query_combo_index) %>% 
+# 		mutate(concentration_M_d1 = log10(concentration_M_d1),
+# 					 concentration_M_d2 = log10(concentration_M_d2))
+# 	
+# 	this_summary %>% 
+# 	ggplot() +
+# 		geom_line(aes(concentration_M_d1, pred_via, colour = as.factor(concentration_M_d2))) +   scale_color_viridis_d() 
+# 	labs(x = paste0('[M] ',this_summary$drug_1[1]), y = paste0('[M] ',this_summary$drug_2[1]), title = paste0(this_summary$drug_1[1],"+",this_summary$drug_2[1],' ALMANAC Score Heatmap'))
+# }
+
+
+get_score_heatmap = function(query_combo_index, all_synergy_summary_dataset) {
+
+	this_summary = all_synergy_summary_dataset %>%
+		filter(combo_index == query_combo_index)
+	
+	this_summary %>% 
+	ggplot(aes(as.factor(concentration_M_d1), as.factor(concentration_M_d2), fill = ALMANAC_score)) +
+	geom_raster() +
+	scale_fill_divergent() +
+	labs(x = paste0('[M] ',this_summary$drug_1[1]), y = paste0('[M] ',this_summary$drug_2[1]), title = paste0(this_summary$drug_1[1],"+",this_summary$drug_2[1],' ALMANAC Scores'))
+
+}
+
+get_dose_response_heatmap = function(query_combo_index, all_synergy_summary_dataset) {
+
+	this_summary = all_synergy_summary_dataset %>%
+		filter(combo_index == query_combo_index)
+	
+	this_summary %>% 
+	ggplot(aes(as.factor(concentration_M_d1), as.factor(concentration_M_d2), fill = pred_via)) +
+	geom_raster() +
+	scale_fill_gradient(name = 'Predicted Viability') +
+	labs(x = paste0('[M] ',this_summary$drug_1[1]), y = paste0('[M] ',this_summary$drug_2[1]), title = paste0(this_summary$drug_1[1],"+",this_summary$drug_2[1],' Dose Responses'))
+
+}
+
+
+get_synergy_heatmaps = function(combo_index, synergy_summary_dataset) {
+	
+	a = get_score_heatmap(query_combo_index = combo_index, all_synergy_summary_dataset = synergy_summary_dataset)
+	b = get_dose_response_heatmap(query_combo_index = combo_index, all_synergy_summary_dataset = synergy_summary_dataset)
+	
+	return(a + b)
+	
+}
+```
+
+```{r}
+
+All_TNBC_synergy_scores_summary = read_csv(here('results/All_PRISM_imputed_based_complete_TNBC_lines_synergy_scores.csv'))
+
+get_synergy_heatmaps(combo_index = 112059, synergy_summary_dataset = All_TNBC_synergy_scores_summary)
+
+ggsave(here('figures/synergy_preds/SUM229PE_top_synergy_zeros.png'), height = 5, width = 15)
+
+get_synergy_heatmaps(combo_index = 34345, synergy_summary_dataset = All_TNBC_synergy_scores_summary)
+
+ggsave(here('figures/synergy_preds/MDAMB231_top_synergy_zeros.png'), height = 5, width = 15)
+
+get_synergy_heatmaps(combo_index = 5456, synergy_summary_dataset = All_TNBC_synergy_scores_summary)
+
+ggsave(here('figures/synergy_preds/SKBR3_top_synergy.png'), height = 5, width = 15)
+
+get_synergy_heatmaps(combo_index = 74226, synergy_summary_dataset = All_TNBC_synergy_scores_summary)
+
+ggsave(here('figures/synergy_preds/SUM159_top_synergy.png'), height = 5, width = 15)
+
+```
+
+```{r}
+get_top_4_synergy_heatmaps = function(depmap_id_to_search, synergy_scores_dataset) {
+
+this_synergy_scores = synergy_scores_dataset %>% 
+	filter(depmap_id == depmap_id_to_search) %>% 
+	arrange(desc(ALMANAC_score)) %>% 
+	slice(1:4)
+
+for (i in 1:dim(this_synergy_scores)[1]) {
+	dir.create(here('figures/synergy_preds/PRISM_based', paste0(this_synergy_scores$stripped_cell_line_name[i])), showWarnings = F)
+	get_synergy_heatmaps(combo_index = this_synergy_scores$combo_index[i], 
+											 synergy_summary_dataset = All_TNBC_synergy_scores_PRISM_reality_summary)
+	ggsave(here('figures/synergy_preds/PRISM_based/',paste0(this_synergy_scores$stripped_cell_line_name[i],"/"), paste0('top_',i,'_',this_synergy_scores$stripped_cell_line_name[i],'_synergy.png')), height = 5, width = 15)
+}
+}
+
+
+avail_lines = sample_info %>% 
+	filter(cell_line_name %in% c("SK-BR-3","MCF7","MDA-MB-436","HCC1806",
+															 "MDA-MB-231","BT-474","SUM-149PT","SUM-159PT",
+															 "SUM-229PE"))
+
+for (i in 1:dim(PRISM_TNBC_cell_lines)[1]) {
+get_top_4_synergy_heatmaps(depmap_id_to_search = PRISM_TNBC_cell_lines$depmap_id[i], 
+													 synergy_scores_dataset = All_TNBC_synergy_scores_PRISM_reality_summary)
+}
+```
+
+
+
+

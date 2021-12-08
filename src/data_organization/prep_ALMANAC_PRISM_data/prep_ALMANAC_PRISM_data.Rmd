@@ -1,0 +1,227 @@
+#Prep ALMANAC PRISM synergy predictions data 
+
+#Chinmaya Joisa
+
+```{r}
+library(tidyverse)
+library(here)
+library(purrr)
+```
+
+```{r}
+#read in data 
+
+ALMANAC = read_csv(here('data/ALMANAC/ComboDrugGrowth_Nov2017.csv'))
+matched_ALMANAC_drugs = read_csv(here('src/data_organization/find_ALMANAC_klaeger_matches/ALMANAC_klaeger_matchlist.csv'))
+PRISM_cell_lines = read_csv(here('data/CCLE_data/sample_info.csv'))
+CCLE_data = read_rds(here('results/full_CCLE_expression_set_for_ML.rds'))
+cell_line_1_combos = read_rds(here('results/synergy_predictions/per_cell_line/ACH-000001.rds'))
+```
+
+```{r}
+ALMANAC_processed = ALMANAC %>% 
+	select(COMBODRUGSEQ, 
+				 CELLNAME, 
+				 CELLNBR, 
+				 PANEL, 
+				 NSC1, 
+				 NSC2, 
+				 CONC1,
+				 CONC2,
+				 TESTVALUE,
+				 CONTROLVALUE) %>% 
+	filter(NSC1 %in% matched_ALMANAC_drugs$ALMANAC_id & NSC2 %in% matched_ALMANAC_drugs$ALMANAC_id) %>% 
+	left_join(matched_ALMANAC_drugs, by = c('NSC1' = 'ALMANAC_id')) %>% 
+	rename('drug1' = klaeger_name) %>% 
+	select(-ALMANAC_name) %>% 
+	left_join(matched_ALMANAC_drugs, by = c('NSC2' = 'ALMANAC_id')) %>% 
+	rename('drug2' = klaeger_name) %>% 
+	select(-ALMANAC_name) %>% 
+	select(-NSC1, -NSC2) %>% 
+	mutate(viability = TESTVALUE/CONTROLVALUE)
+	
+	
+
+write_csv(ALMANAC_processed, here('results/synergy_predictions/ALMANAC_processed.csv'))
+```
+
+```{r}
+#find cell line matches
+
+ALMANAC_cell_line_matchlist = ALMANAC_processed %>% 
+	select(CELLNAME, CELLNBR) %>% 
+	unique()
+	
+PRISM_cell_line_matchlist = PRISM_cell_lines %>% 
+	select(cell_line_name, stripped_cell_line_name, DepMap_ID) %>% 
+	unique()
+
+cell_line_naive_matches = ALMANAC_cell_line_matchlist %>% 
+	left_join(PRISM_cell_line_matchlist, by = c('CELLNAME' = 'cell_line_name')) %>% 
+	filter(!is.na(DepMap_ID))
+
+ALMANAC_no_matches = ALMANAC_cell_line_matchlist %>% 
+	filter(!CELLNAME %in% cell_line_naive_matches$CELLNAME)
+
+PRISM_cell_lines_no_matches = PRISM_cell_line_matchlist %>% 
+	filter(!cell_line_name %in% cell_line_naive_matches$CELLNAME)
+
+write_csv(cell_line_naive_matches, here('src/data_organization/find_ALMANAC_klaeger_matches/naive_cell_line_matchlist.csv'))
+
+write_csv(ALMANAC_no_matches, here('src/data_organization/find_ALMANAC_klaeger_matches/ALMANAC_no_matches.csv'))
+
+write_csv(PRISM_cell_lines_no_matches, here('src/data_organization/find_ALMANAC_klaeger_matches/PRISM_no_matches.csv'))
+
+ALMANAC_PRISM_cell_line_matches = read_csv(here('src/data_organization/find_ALMANAC_klaeger_matches/manual_matched_cell_lines.csv'))
+
+ALMANAC_PRISM_CCLE_cell_lines = ALMANAC_PRISM_cell_line_matches %>% 
+	filter(DepMap_ID %in% CCLE_data$DepMap_ID)
+```
+
+
+```{r}
+#matching doses
+klaeger_doses = cell_line_1_combos %>% 
+	select(concentration_M_d1, concentration_M_d2) %>% 
+	unique()
+
+
+ALMANAC_processed_cell_line_matched = ALMANAC_processed %>%
+	left_join(ALMANAC_PRISM_cell_line_matches, by = c('CELLNAME' = 'ALMANAC_NAME')) %>% 
+	select(-PRISM_NAME) %>% 
+	filter(DepMap_ID %in% CCLE_data$DepMap_ID) %>% 
+	select(CELLNAME, CONC1, CONC2, viability, drug1, drug2, DepMap_ID)
+
+ALMANAC_doses = ALMANAC_processed_cell_line_matched %>% 
+	group_by(CONC1, CONC2) %>% 
+	summarise(n = n())
+
+dose_matches = ALMANAC_doses %>% 
+	inner_join(klaeger_doses, by = c('CONC1' = 'concentration_M_d2', 'CONC2' = 'concentration_M_d1'))
+	
+```
+
+```{r}
+ALMANAC_data_table = ALMANAC_PRISM_CCLE_cell_lines %>% 
+	select(DepMap_ID) %>% 
+	mutate(file = here('results/synergy_predictions/per_cell_line/', paste0(DepMap_ID, '.rds')))
+
+All_ALMANAC_data = data.frame()
+for(i in 1:dim(ALMANAC_data_table)[1]) {
+	this_ALMANAC_data = read_rds(ALMANAC_data_table$file[i])
+		All_ALMANAC_data = bind_rows(All_ALMANAC_data, this_ALMANAC_data)
+}
+
+All_ALMANAC_synpred_data = All_ALMANAC_data %>% 
+	inner_join(ALMANAC_processed_cell_line_matched, 
+	by = c('DepMap_ID', 'drug_1' = 'drug1', 'drug_2' = 'drug2', 'concentration_M_d1' = 'CONC2', 'concentration_M_d2' = 'CONC1')) %>% 
+	select(-CELLNAME)
+
+percent_data_lost = (dim(ALMANAC_processed_cell_line_matched)[1] - dim(All_ALMANAC_synpred_data)[1] )/dim(ALMANAC_processed_cell_line_matched)[1] * 100  
+
+All_ALMANAC_synpred_data %>% 
+	ggplot(aes(via_pred, viability)) +
+	geom_hex() +
+	geom_smooth( method = 'lm') +
+	labs(title = paste0('Correlation = ', cor(All_ALMANAC_synpred_data$via_pred, All_ALMANAC_synpred_data$viability))) + 
+	geom_abline(slope = 1, intercept = c(0,0))
+	
+cor(All_ALMANAC_synpred_data$via_pred, All_ALMANAC_synpred_data$viability)
+```
+
+```{r}
+#find nearest concentrations for matching
+
+ALMANAC_unique_doses_1 = ALMANAC_doses %>%
+	ungroup() %>% 
+	select(CONC1) %>%
+	rename(conc = CONC1) %>% 
+	unique()
+ALMANAC_unique_doses_2 = ALMANAC_doses %>%
+	ungroup() %>% 
+	select(CONC2) %>% 
+	rename(conc = CONC2) %>% 
+	unique()
+ALMANAC_unique_doses = bind_rows(
+	ALMANAC_unique_doses_1, ALMANAC_unique_doses_2
+) %>% 
+	unique()
+
+klaeger_unique_doses = klaeger_doses %>% 
+	select(concentration_M_d1) %>% 
+	rename(conc = concentration_M_d1) %>% 
+	unique()
+
+matched_doses = ALMANAC_unique_doses %>% 
+	filter(conc %in% klaeger_unique_doses$conc) %>% 
+	mutate(klaeger_conc = conc)
+
+ALMANAC_unmatched_doses = ALMANAC_unique_doses %>% 
+	filter(!conc %in% matched_doses$conc)
+
+nearest_klaeger_concentration = function(concentration, all_klaeger_concentrations) {
+differences = all_klaeger_concentrations %>% 
+	filter(conc != 0) %>% 
+	mutate('difference' = abs(conc - concentration)) %>%  
+	arrange(difference) 
+min_difference = differences$conc[1]
+return(min_difference)
+}
+
+ALMANAC_nearest_klaeger_doses = ALMANAC_unmatched_doses %>% 
+	mutate(nearest_klaeger_dose = map(conc, ~nearest_klaeger_concentration(., klaeger_unique_doses))) %>% 
+	as.data.frame() %>% 
+	unnest(cols = c(nearest_klaeger_dose))
+```
+
+```{r}
+All_closest_ALMANAC_synpred_data = ALMANAC_processed_cell_line_matched %>%
+	left_join(ALMANAC_nearest_klaeger_doses, by = c('CONC1' = 'conc')) %>% 
+	rename(nearest_klaeger_dose_1 = nearest_klaeger_dose) %>% 
+	left_join(matched_doses, by = c('CONC1' = 'conc')) %>% 
+	mutate(nearest_klaeger_dose_1 = if_else(
+		is.na(nearest_klaeger_dose_1), 
+		klaeger_conc, 
+		nearest_klaeger_dose_1
+	)) %>% 
+	select(-klaeger_conc) %>% 
+	left_join(ALMANAC_nearest_klaeger_doses, by = c('CONC2' = 'conc')) %>% 
+	rename(nearest_klaeger_dose_2 = nearest_klaeger_dose) %>% 
+	left_join(matched_doses, by = c('CONC2' = 'conc')) %>% 
+	mutate(nearest_klaeger_dose_2 = if_else(
+		is.na(nearest_klaeger_dose_2), 
+		klaeger_conc, 
+		nearest_klaeger_dose_2
+	)) %>% 
+	select(-klaeger_conc) %>% 
+	left_join(All_ALMANAC_data, 
+	by = c('DepMap_ID', 'drug1' = 'drug_1', 'drug2' = 'drug_2', 'nearest_klaeger_dose_1' = 'concentration_M_d1', 'nearest_klaeger_dose_2' = 'concentration_M_d2')) %>% 
+	left_join(rename(All_ALMANAC_data, via_pred_2 = via_pred), 
+	by = c('DepMap_ID', 'drug1' = 'drug_2', 'drug2' = 'drug_1', 'nearest_klaeger_dose_1' = 'concentration_M_d2', 'nearest_klaeger_dose_2' = 'concentration_M_d1')) %>% 
+	mutate(via_pred= if_else(
+		is.na(via_pred), 
+		via_pred_2, 
+		via_pred
+	)) %>%
+	select(-via_pred_2) %>% 
+	filter(!is.na(via_pred))
+
+```
+
+```{r}
+All_closest_ALMANAC_synpred_data %>% 
+	ggplot(aes(via_pred, viability)) +
+	geom_hex() +
+	geom_smooth(method = 'lm') +
+	labs(title = paste0('Correlation = ', cor(All_closest_ALMANAC_synpred_data$via_pred, All_closest_ALMANAC_synpred_data$viability))) + 
+	geom_abline(intercept = 0, slope = 1, size = 0.5, colour = 'red') +
+	xlim(0,1.75) +
+	ylim(0,1.75)
+
+ggsave(here('figures/synergy_preds/approximated_ALMANAC_vs_synergy_preds_correlation.png'), height = 7, width = 10)
+
+filtered = All_closest_ALMANAC_synpred_data %>% 
+	filter(via_pred < 1, viability < 1)
+cor(filtered$via_pred, filtered$viability)
+```
+
