@@ -10,7 +10,7 @@ library(argparse)
 tic()
 
 parser <- ArgumentParser(description='Process input paramters')
-parser$add_argument('--feature_num', default = 500, type="integer")
+parser$add_argument('--feature_num', default = 100, type="integer")
 parser$add_argument('--CV_fold_ID', default = 1, type="integer")
 
 args = parser$parse_args()
@@ -62,7 +62,7 @@ PRISM_klaeger_imputed = PRISM_klaeger_imputed %>%
 # Setup and Run Model
 ###############################################################################
 
-cluster_sets = cutree(cluster_result, k = args$feature_num) %>% 
+cluster_feature_selection = cutree(cluster_result, k = args$feature_num) %>% 
 	as.data.frame() %>% 
 	rename(cluster_num = ".") %>% 
 	rownames_to_column("feature") %>%
@@ -73,50 +73,49 @@ cluster_sets = cutree(cluster_result, k = args$feature_num) %>%
 	select(-data) %>%
 	unnest(best_cor) %>%
 	identity()
-		
 
 ###########################################################
 # Build Cross Validation Data Set
 ###########################################################
-# splits = list()
-# 
-# splits[[1]] = make_splits(list("analysis" = which(fold_ids != args$CV_fold_ID),
-# 															 "assessment" = which(fold_ids == args$CV_fold_ID)),
-# 													build_regression_viability_set(feature_cor,args$feature_num))
-# 
-# id = sprintf("Fold%02d",args$CV_fold_ID)
-# 
-# cross_validation_set = new_rset(
-# 	splits = splits,
-# 	ids = id,
-# 	attrib = sprintf("Per compound cv splits for fold ", args$CV_fold_ID),
-# 	subclass = c("vfold_cv", "rset")
-# )
+splits = list()
+
+splits[[1]] = make_splits(list("analysis" = which(fold_ids != args$CV_fold_ID),
+															 "assessment" = which(fold_ids == args$CV_fold_ID)),
+													build_regression_viability_set(cluster_feature_selection,args$feature_num))
+
+id = sprintf("Fold%02d",args$CV_fold_ID)
+
+cross_validation_set = new_rset(
+	splits = splits,
+	ids = id,
+	attrib = sprintf("Per compound cv splits for fold ", args$CV_fold_ID),
+	subclass = c("vfold_cv", "rset")
+)
 
 ###########################################################
 # Run Model
 ###########################################################
-# PRISM_klaeger_recipe = recipe(target_viability ~ ., cross_validation_set$splits[[1]]$data) %>%
-# 	update_role(-starts_with("act_"),
-# 							-starts_with("exp_"),
-# 							-starts_with("dep_"),
-# 							-starts_with("target_"), new_role = "id variable") %>%
-# 	prep()
-# 
-# rand_forest_spec <- rand_forest() %>% 
-# 	set_engine("ranger", num.threads = 8) %>%
-# 	set_mode("regression")
-# 
-# rand_forest_wf <- workflow() %>%
-# 	add_model(rand_forest_spec) %>%
-# 	add_recipe(PRISM_klaeger_recipe)
-# 
-# model_results <- tune_grid(
-# 	rand_forest_wf,
-# 	resamples = cross_validation_set,
-# 	control = control_grid(save_pred = TRUE)
-# ) %>% write_rds(full_output_file, compress = 'gz')
-# 
-# write_rds(model_results$.predictions[[1]], pred_output_file, compress = 'gz')
+PRISM_klaeger_recipe = recipe(target_viability ~ ., cross_validation_set$splits[[1]]$data) %>%
+	update_role(-starts_with("act_"),
+							-starts_with("exp_"),
+							-starts_with("dep_"),
+							-starts_with("target_"), new_role = "id variable") %>%
+	prep()
+
+rand_forest_spec <- rand_forest() %>%
+	set_engine("ranger", num.threads = 8) %>%
+	set_mode("regression")
+
+rand_forest_wf <- workflow() %>%
+	add_model(rand_forest_spec) %>%
+	add_recipe(PRISM_klaeger_recipe)
+
+model_results <- tune_grid(
+	rand_forest_wf,
+	resamples = cross_validation_set,
+	control = control_grid(save_pred = TRUE)
+) %>% write_rds(full_output_file, compress = 'gz')
+
+write_rds(model_results$.predictions[[1]], pred_output_file, compress = 'gz')
 
 toc()
