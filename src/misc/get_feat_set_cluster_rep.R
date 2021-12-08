@@ -20,10 +20,6 @@ parser$add_argument('--CV_fold_ID', default = 1, type="integer")
 
 args = parser$parse_args()
 
-dir.create(here('results/single_model_expression_regression_combo_10fold'), recursive = T)
-
-source(here('src/build_ML_models_expression_regression_combo_10fold/shared_feature_selection_functions.r'))
-
 ###############################################################################
 # Load Data
 ###############################################################################
@@ -33,7 +29,7 @@ klaeger_wide = read_rds(here('results/klaeger_full_tidy.rds')) %>%
 	select(-gene_name) %>%
 	pivot_wider(names_from = act_gene_name, values_from = relative_intensity)
 
-PRISM_klaeger_imputed = read_rds(here('results/PRISM_klaeger_imputed_tidy_1.2_exclude.rds'))
+PRISM_klaeger_imputed = read_rds(here('results/PRISM_klaeger_imputed_tidy.rds'))
 
 CCLE_data = read_rds(here('results/single_model/full_CCLE_expression_set_for_ML.rds'))
 
@@ -42,16 +38,14 @@ PRISM_klaeger_imputed = PRISM_klaeger_imputed %>%
 	ungroup()
 
 temp = PRISM_klaeger_imputed %>% 
-	# slice_sample(prop=0.001) %>%
+	# slice_sample(prop=0.75) %>%
 	left_join(klaeger_wide, by = c('drug'='drug','klaeger_conc'='concentration_M')) %>% 
 	left_join(CCLE_data, by=c('depmap_id'='DepMap_ID')) %>%
 	mutate(target_viability = imputed_viability)
 
-cross_cor_mat = amap::Dist(
-	temp %>% select(starts_with("act_"),starts_with("exp_")) %>% t(),
-	method="correlation")
-
-write_rds(here('src/misc/cross_cor_mat.rds'), compres = 'gz')
+# cross_cor_mat = HiClimR::fastCor(temp %>% select(starts_with("act_"),starts_with("exp_")), optBLAS = T, nSplit = 1000, upperTri = T)
+# 
+# write_rds(cross_cor_mat,here('src/misc/cross_cor_mat.rds'), compres = 'gz')
 
 # if (file.exists(here('results/single_model_expression_regression_combo_10fold/CV_split_row_nums.rds'))) {
 # 	fold_ids = read_rds(here('results/single_model_expression_regression_combo_10fold/CV_split_row_nums.rds'))
