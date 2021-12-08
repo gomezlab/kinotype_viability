@@ -1,0 +1,205 @@
+---
+title: "Make Hypothetical Predictions for JAVELIN"
+author: "Chinmaya Joisa"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(tidymodels)
+library(tictoc)
+library(ranger)
+```
+
+```{r}
+JAVELIN_data = read_csv(here('data/Clinical_Data/JAVELIN/JAVELIN_data_for_ml.csv'))
+
+klaeger_wide = read_rds(here('results/klaeger_full_tidy.rds')) %>%
+	mutate(act_gene_name = paste0("act_",gene_name)) %>%
+	select(-gene_name) %>%
+	pivot_wider(names_from = act_gene_name, values_from = relative_intensity)
+
+PRISM_klaeger_imputed = read_rds(here('results/PRISM_klaeger_imputed_tidy.rds'))
+
+CCLE_data = read_rds(here('results/full_CCLE_expression_set_for_ML.rds'))
+
+exp_genes_in_model = read_csv(here('data/exp_genes_in_model.csv'))
+
+PRISM_klaeger_imputed = PRISM_klaeger_imputed %>%
+	filter(depmap_id %in% CCLE_data$DepMap_ID) %>%
+	ungroup()
+
+data_for_model_production = read_rds(here('results/full_model_data_set_1500feat.rds'))
+```
+
+```{r}
+
+JAVELIN_data_long = JAVELIN_data %>% 
+	pivot_longer(c(-patient, -PFS_P, -treatment), names_to = 'gene', values_to = 'TPM')
+
+JAVELIN_genes = JAVELIN_data_long %>% 
+	select(gene) %>% 
+	unique()
+
+model_genes_in_javelin = exp_genes_in_model %>% 
+	filter(gene %in% JAVELIN_genes$gene)
+
+model_genes_not_in_javelin = exp_genes_in_model %>% 
+	filter(!gene %in% JAVELIN_genes$gene)
+
+model_genes_not_in_javelin_matched = model_genes_not_in_javelin %>% 
+	mutate(JAVELIN_name = case_when(
+		gene == 'GARRE1' ~ 'KIAA0355',
+		gene == 'SELENOK' ~ 'SELK',
+		gene == 'BORCS7' ~ 'C10orf32',
+		gene == 'EOLA1' ~ 'CXorf40A',
+		gene == 'RETREG2' ~ 'FAM134A',
+		gene == 'GOLM2' ~ 'CASC4',
+		gene == 'LNPK' ~ 'KIAA1715',
+		gene == 'ELOB' ~ 'TCEB2',
+		gene == 'TLCD4-RWDD3' ~ 'TMEM56-RWDD3',
+		gene == 'ELAPOR1' ~ 'KIAA1324',
+		gene == 'UMAD1' ~ 'RPA3OS',
+		gene == 'TNS2' ~ 'TENC1',
+		gene == 'VPS26C' ~ 'DSCR3',
+		gene == 'RTF2' ~ 'RTFDC1',
+		gene == 'MINAR1' ~ 'KIAA1024',
+		gene == 'SELENOS' ~ 'VIMP',
+		gene == 'EOLA2' ~ 'CXorf40B',
+		gene == 'LARGE1' ~ 'LARGE',
+		gene == 'CCDC32' ~ 'C15orf57',
+		gene == 'CIAO3' ~ 'NARFL',
+		gene == 'ZNF875' ~ 'HKR1',
+		gene == 'YAE1' ~ 'YAE1D1',
+		gene == 'RIPOR3' ~ 'FAM65C',
+		gene == 'FAAP24' ~ 'C19orf40',
+		gene == 'DYNC2I1' ~ 'WDR60',
+		gene == 'TMEM121B' ~ 'CECR6',
+		gene == 'TIMM29' ~ 'C19orf52',
+		gene == 'STMP1' ~ 'C7orf73',
+		gene == 'BICRA' ~ 'GLTSCR1',
+		gene == 'NSG2' ~ 'HMP19',
+		gene == 'FDX2' ~ 'FDX1L',
+		gene == 'SHTN1' ~ 'KIAA1598',
+		gene == 'MTERF2' ~ 'MTERFD3',
+		gene == 'MICOS13' ~ 'C19orf70',
+		gene == 'MIGA1' ~ 'FAM73A',
+		gene == 'BPNT2' ~ 'IMPAD1',
+		gene == 'WASHC4' ~ 'KIAA1033'
+	)) %>% 
+	filter(!is.na(JAVELIN_name))
+
+manual_model_genes_in_JAVELIN = model_genes_in_javelin %>% 
+	mutate(JAVELIN_name = NA) %>% 
+	bind_rows(model_genes_not_in_javelin_matched) %>% 
+	mutate(JAVELIN_name = if_else(
+		is.na(JAVELIN_name),
+		gene,
+		JAVELIN_name
+	))
+
+model_genes_definitely_not_in_JAVELIN = exp_genes_in_model %>% 
+	filter(!gene %in% manual_model_genes_in_JAVELIN$gene)
+	
+JAVELIN_data_for_model = JAVELIN_data_long %>%
+	filter(gene %in% manual_model_genes_in_JAVELIN$JAVELIN_name) %>%
+	left_join((
+		manual_model_genes_in_JAVELIN %>% select(-type) %>% 
+							rename('klaeger_name' = gene)
+		),
+	by = c('gene' = 'JAVELIN_name')) %>% 
+	select(-gene) %>% 
+	mutate(exp_gene = paste0("exp_",klaeger_name)) %>%
+	select(-klaeger_name) %>% 
+	mutate(TPM = log2(TPM+1)) %>%
+	select(-treatment) %>% 
+	pivot_wider(names_from = exp_gene, values_from = TPM) %>% 
+	bind_rows(slice(select(data_for_model_production, -starts_with('act')), 1)) %>% 
+	mutate_all(~replace(., is.na(.), 0)) %>% 
+	select(-depmap_id, -drug, -klaeger_conc, -imputed_viability, -target_viability) %>% 
+	filter(patient != 0)
+
+JAVELIN_patients = JAVELIN_data_for_model %>% 
+	select(patient) %>% 
+	unique()
+
+klaeger_drugs = klaeger_wide %>% 
+	select(drug) %>% 
+	unique()
+
+
+all_drugs_per_patient = data.frame()
+for (i in 1:dim(JAVELIN_patients)[1]) {
+	
+all_drugs_per_this_patient = klaeger_drugs %>% 
+	mutate(patient = JAVELIN_patients$patient[i])
+
+all_drugs_per_patient = bind_rows(all_drugs_per_patient, all_drugs_per_this_patient)
+	
+}
+
+JAVELIN_hypothetical_data_for_model = JAVELIN_data_for_model %>% 
+	left_join(all_drugs_per_patient, by = 'patient') %>% 
+	left_join(klaeger_wide, by = c('drug'))
+```
+
+
+```{r}
+
+	rand_forest_model = read_rds(here('results/final_model_1500feat.rds'))
+
+```
+
+```{r}
+JAVELIN_data_for_model_predictions = JAVELIN_hypothetical_data_for_model %>% 
+	select(patient, PFS_P, drug, concentration_M, any_of(names(data_for_model_production)))
+	
+
+model_predictions = data.frame()
+
+tic()
+for (this_conc in unique(JAVELIN_data_for_model_predictions$concentration_M)) {
+	this_subset = JAVELIN_data_for_model_predictions %>%
+		filter(concentration_M == this_conc)
+	this_subset$pred_via  = predict(rand_forest_model,
+																	this_subset %>%
+																		mutate(depmap_id = NA, klaeger_conc = NA, imputed_viability = NA)) %>%
+		pull(.pred)
+
+	model_predictions = bind_rows(
+		model_predictions,
+		this_subset %>%
+			select(patient,drug,concentration_M, PFS_P, pred_via)
+	)
+}
+
+model_predictions %>%
+	arrange(patient,drug, PFS_P,concentration_M) %>%
+	write_rds(here('results/clinical_model_hypothetical_predictions_1500feat.rds'))
+toc()
+
+drug_means = model_predictions %>% 
+	group_by(patient, drug) %>% 
+	summarise(mean_via = mean(pred_via))
+	
+
+
+```
+
+```{r}
+model_predictions_filtered = model_predictions %>% 
+	filter(concentration_M == 0.00003) %>% 
+	filter(treatment == 'Axitinib')
+
+model_predictions_filtered %>% 
+	ggplot(aes(pred_via, PFS_P)) +
+	geom_hex() +
+	scale_fill_gradient(low="lightblue1",high="darkblue",trans="log10") +
+	geom_smooth() +
+	labs(title = paste0('Correlation = ', cor(model_predictions_filtered$pred_via, model_predictions_filtered$PFS_P)))
+	xlim(0.5,1.2) +
+	ylim(0,25)
+```
+

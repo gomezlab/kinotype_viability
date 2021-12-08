@@ -1,0 +1,189 @@
+---
+title: "Synergy Predictions in SynergyFinder"
+author: "Matthew Berginski"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(broom)
+library(patchwork)
+library(rayshader)
+library(conflicted)
+library(synergyfinder)
+conflict_prefer("filter", "dplyr")
+conflict_prefer("slice", "dplyr")
+# SUM159 = ACH-001391
+# HCC1806 = ACH-000624
+```
+
+```{r}
+#read in data
+All_preds = read_rds(here('results/model_predictions_1500feat.rds'))
+SUM159_combos = read_rds(here('results/SUM159_combo.rds')) %>% 
+	rename('pred_via' = via_pred)
+HCC1806_combos = read_rds(here('results/HCC1806_combo.rds')) %>% 
+	rename('pred_via' = via_pred)
+```
+
+```{r}
+#pre-process: remove cell growth "enhancers"
+
+weird_drugs = All_preds %>% 
+	group_by(drug) %>% 
+	summarise(mean_via = mean(pred_via)) %>% 
+	filter(mean_via > 1) %>% 
+	select(drug) %>% 
+	unique()
+
+SUM159_combos_preprocessed = SUM159_combos %>% 
+	filter(!drug_1 %in% weird_drugs$drug) %>% 
+	filter(!drug_2 %in% weird_drugs$drug)
+
+HCC1806_combos_preprocessed = HCC1806_combos %>% 
+	filter(!drug_1 %in% weird_drugs$drug) %>% 
+	filter(!drug_2 %in% weird_drugs$drug)
+```
+
+
+```{r}
+#process data
+SUM159_block_ids = SUM159_combos_preprocessed %>%
+	select(drug_1, drug_2) %>% 
+	unique() %>% 
+	mutate('PairIndex' = 1:n())
+
+SUM159_processed = SUM159_combos_preprocessed %>% 
+	left_join(SUM159_block_ids, by = c('drug_1' = 'drug_1', 'drug_2' = 'drug_2')) %>% 
+	rename('Conc1' = concentration_M_d1, 
+				 'Conc2' = concentration_M_d2,
+				 'drug1' = drug_1,
+				 'drug2' = drug_2,
+				 'Response' = pred_via) %>% 
+	mutate('ConcUnit' = 'M') %>% 
+	select(-DepMap_ID)
+
+HCC1806_block_ids = HCC1806_combos_preprocessed %>%
+	select(drug_1, drug_2) %>% 
+	unique() %>% 
+	mutate('PairIndex' = 1:n())
+
+HCC1806_processed = HCC1806_combos_preprocessed %>% 
+	left_join(HCC1806_block_ids, by = c('drug_1' = 'drug_1', 'drug_2' = 'drug_2')) %>% 
+	rename('Conc1' = concentration_M_d1, 
+				 'Conc2' = concentration_M_d2,
+				 'drug1' = drug_1,
+				 'drug2' = drug_2,
+				 'Response' = pred_via) %>% 
+	mutate('ConcUnit' = 'M') %>% 
+	select(-DepMap_ID)
+	
+SUM159_reshaped = ReshapeData(
+	data = SUM159_processed,
+	data_type = 'viability',
+	impute = TRUE,
+	noise = TRUE
+)
+
+SUM159_synergy_predictions <- CalculateSynergy(
+  data = SUM159_reshaped,
+  method = c("ZIP", "HSA", "Bliss", "Loewe"),
+  correct_baseline = 'all')
+
+# SUM159_synergy_predictions_sensitivity = CalculateSensitivity(
+# 	data = SUM159_synergy_predictions
+#)
+
+SUM159_all_drug_summaries = SUM159_synergy_predictions$drug_pairs
+```
+
+```{r}
+Plot2DrugHeatmap(
+    data = SUM159_synergy_predictions,
+    plot_block = 54,
+    drugs = c(1, 2),
+    plot_value = "ZIP_synergy",
+    dynamic = FALSE)
+
+block_17830 = HCC1806_synergy_predictions$synergy_scores %>% 
+	filter(block_id == 54) 
+	# select(conc1, conc2, ZIP_synergy) %>% 
+	# pivot_wider(names_from = conc2, values_from = ZIP_synergy)
+
+
+
+block_17830 %>% 
+	ggplot(aes(as.character(conc1), as.character(conc2), fill = Loewe_synergy)) +
+	geom_raster() +
+	scale_color_viridis_d()
+
+HCC_1806_all_synergy_scores = HCC1806_synergy_predictions$synergy_scores
+
+# get_loewe_heatmap = function(block_number, synergy_prediction_dataset, drug_summary_dataset) {
+# 	 
+# 	this_block_summary = 
+# 	
+# 	this_block = synergy_prediction_dataset$synergy_scores %>% 
+# 	filter(block_id == block_number) %>%
+# 	ggplot(aes(as.character(conc1), as.character(conc2), fill = Loewe_synergy)) +
+# 	geom_raster() +
+# 	scale_color_viridis_d() +
+# 	labs(x = '//[M] drug 1', y = '//[M] drug 2', title = 
+# 		
+# }
+
+get_synergy_plots_for_query_drugs(query_drug_1 = 'Quizartinib', query_drug_2 = 'PF-04691502', cell_line_processed_synergy_data = HCC1806_combos_processed)
+
+get_synergy_plots_for_query_block_id = function(query_block_id, cell_line_processed_synergy_data, drug_summary_dataset) {
+
+this_query_drug_1 = pull(filter(drug_summary_dataset, block_id == query_block_id), drug1)
+this_query_drug_2 = pull(filter(drug_summary_dataset, block_id == query_block_id), drug2)
+
+plot = get_synergy_plots_for_query_drugs(query_drug_1 = this_query_drug_1, query_drug_2 = this_query_drug_2, cell_line_processed_synergy_data = cell_line_processed_synergy_data)
+
+return(plot)
+
+}
+
+HCC1806_drug_summary_real = HCC1806_all_drug_summaries %>% 
+	filter(!drug1 %in% weird_drugs$drug) %>% 
+	filter(!drug2 %in% weird_drugs$drug)
+
+HCC1806_drug_summary_real = HCC1806_all_drug_summaries %>% 
+	filter(!drug1 %in% weird_drugs$drug) %>% 
+	filter(!drug2 %in% weird_drugs$drug)
+
+HCC1806_synergy_predictions_real = HCC1806_synergy_predictions$synergy_scores %>%
+	filter(block_id %in% HCC1806_drug_summary_real$block_id)
+	
+
+get_synergy_plots_for_query_block_id(query_block_id = 8440, cell_line_processed_synergy_data = HCC1806_combos_processed, drug_summary_dataset = HCC1806_all_drug_summaries)
+
+ggsave(here('figures/synergy_preds/highest_bliss_synergy_plot.png'))
+```
+
+```{r}
+#combo data EDA
+
+HCC1806_combos_processed %>% 
+	group_by(drug_1, drug_2) %>% 
+	summarise(mean_inhibition = mean(combo_perc_inhibition)) %>% 
+	ggplot(aes(x = mean_inhibition)) +
+	geom_histogram()
+
+SUM159_combos_processed %>% 
+	group_by(drug_1, drug_2) %>% 
+	summarise(mean_inhibition = mean(combo_perc_inhibition)) %>% 
+	ggplot(aes(x = mean_inhibition)) +
+	geom_histogram()
+
+HCC1806_single_preds = All_preds %>% 
+	filter(depmap_id == 'ACH-000624')
+HCC1806_single_preds_from_combo = HCC1806_combos %>% 
+	filter(concentration_M_d1 == 0 | concentration_M_d2 == 0) %>%
+	left_join(HCC1806_single_preds, by = c('drug_1' = 'drug'), con)
+	
+```
+

@@ -1,0 +1,580 @@
+---
+title: "Make Model Predictions"
+author: "Matthew Berginski"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(broom)
+library(rstatix)
+library(patchwork)
+library(rayshader)
+library(conflicted)
+conflict_prefer("filter", "dplyr")
+conflict_prefer("slice", "dplyr")
+# SUM159 = ACH-001391
+# HCC1806 = ACH-000624
+```
+
+```{r}
+#functions needed
+find_interaction = function(this_data) {
+	this_fit = tidy(
+		lm(formula = combo_perc_inhibition ~ 
+										 	concentration_M_d1 + 
+										 	concentration_M_d2 + 
+										 	concentration_M_d1*concentration_M_d2, data = this_data)
+		) %>% 
+		select(term, estimate) %>% 
+		filter(term == 'concentration_M_d1:concentration_M_d2')
+		
+	return(this_fit$estimate)
+}
+
+find_interaction_p_val = function(this_data) {
+	this_fit = tidy(
+		lm(formula = combo_perc_inhibition ~ 
+										 	concentration_M_d1 + 
+										 	concentration_M_d2 + 
+										 	concentration_M_d1*concentration_M_d2, data = this_data)
+		) %>% 
+		select(term, p.value) %>% 
+		filter(term == 'concentration_M_d1:concentration_M_d2')
+		
+	return(this_fit$p.value)
+}
+
+#function for finding synergy compound combinations  
+
+process_synergy_data = function(this_cell_line_synergy_data) {
+
+this_cell_line_synergy_data_processed = this_cell_line_synergy_data %>%
+	filter(concentration_M_d1 != 0 & concentration_M_d2 != 0 ) %>%
+	mutate('combo_perc_inhibition' = 1 - pred_via) %>% 
+	select(-contains("pred_via")) %>% 
+	mutate('log_conc_1' = log10(concentration_M_d1),
+				 'log_conc_2' = log10(concentration_M_d2))
+return(this_cell_line_synergy_data_processed)
+}
+
+
+get_synergy_predictions = function(this_cell_line_synergy_data){	
+	
+this_cell_line_synergy_data_processed = this_cell_line_synergy_data %>%
+	filter(concentration_M_d1 != 0 & concentration_M_d2 != 0 ) %>%
+	mutate('combo_perc_inhibition' = 1 - pred_via) %>% 
+	select(-contains("pred_via")) %>% 
+	mutate('log_conc_1' = log10(concentration_M_d1),
+				 'log_conc_2' = log10(concentration_M_d2))
+		
+this_cell_line_synergy_predictions = this_cell_line_synergy_data_processed %>%
+	group_by(drug_1, drug_2) %>% 
+	nest() %>% 
+	mutate('interaction_term' = map(data, ~ find_interaction(.))) %>% 
+	mutate('interaction_pval' = map(data, ~ find_interaction_p_val(.))) %>% 
+	unnest(cols = c(interaction_term, interaction_pval)) %>% 
+	mutate('adj_p' = p.adjust(interaction_pval, method = "fdr")) %>% 
+	select(-data)
+
+return(this_cell_line_synergy_predictions)
+}
+```
+
+```{r}
+#read in data
+All_preds = read_rds(here('results/model_predictions_1500feat.rds'))
+SUM159_combos = read_rds(here('results/SUM159_combo.rds')) %>% 
+	rename('pred_via' = via_pred)
+HCC1806_combos = read_rds(here('results/HCC1806_combo.rds')) %>% 
+	rename('pred_via' = via_pred)
+```
+
+```{r}
+SUM159_preds = All_preds %>% 
+	filter(depmap_id == 'ACH-001391') %>% 
+	select(-depmap_id)
+
+SUM159_single_drug1_summary = SUM159_combos %>% 
+	group_by(drug_1) %>% 
+	summarise(single_effect_drug_1 = mean(pred_via)) 
+
+SUM159_single_drug2_summary = SUM159_combos %>%	 
+	group_by(drug_2) %>% 
+	summarise(single_effect_drug_2 = mean(pred_via))
+
+SUM159_combo_summary = SUM159_combos %>%
+	filter(concentration_M_d1 != 0 & concentration_M_d1 != 0 ) %>% 
+	left_join(rename(SUM159_preds, 'single_1_pred_via' = pred_via), 
+					 by = c('drug_1' = 'drug' ,'concentration_M_d1' = 'concentration_M')) %>% 
+	left_join(rename(SUM159_preds, 'single_2_pred_via' = pred_via), 
+					 by = c('drug_2' = 'drug' ,'concentration_M_d2' = 'concentration_M')) %>% 
+	filter(!is.na(single_2_pred_via)) %>% 
+	mutate('mean_diff' = 
+				 	abs((pred_via - single_1_pred_via) + (pred_via - single_2_pred_via))/2) %>% 
+	group_by(drug_1, drug_2) %>% 
+	summarise(mean_combo_effect = mean(pred_via),
+						mean_diff = mean(mean_diff),
+						mean_single_effect_d1 = mean(single_1_pred_via),
+						mean_single_effect_d2 = mean(single_2_pred_via)) 
+
+	# mutate('bliss_predicted_inhibition_rate' = )
+	# group_by(drug_1, drug_2) %>% 
+	# summarise(combo_effect = mean(pred_via)) %>% 
+	# left_join(SUM159_single_drug1_summary, by = 'drug_1') %>% 
+	# left_join(SUM159_single_drug2_summary, by = 'drug_2') %>% 
+	# mutate('diff_from_single' = 
+	# 			 	abs((combo_effect - single_effect_drug_1) + (combo_effect - single_effect_drug_1))/2)
+
+```
+
+
+
+
+```{r}
+# get_interesting_pred_plots <- function(this_cell_line_combo_file) {
+# 	
+# 	this_summary = this_cell_line_combo_file %>%
+# 		group_by(drug_1) %>%
+# 		summarise(single_pred_via = mean(pred_via), 
+# 							pred_range = max(pred_via) - min(pred_via),
+# 							null_prox = abs(mean(pred_via - 1))) %>%
+# 		arrange(full_pred_via)
+# 	
+# 	line_name_extended = unique(these_predictions$cell_line_name_extra)
+# 	
+# 	deadly_pred_set = these_predictions %>%
+# 		mutate(drug = fct_relevel(drug,as.character(these_summary$drug))) %>%
+# 		filter(drug %in% these_summary$drug[1:5])
+# 	
+# 	high_eff_plot = ggplot(deadly_pred_set, aes(x=log10(concentration_M), y=pred_via,color=drug)) +
+# 		geom_point() +
+# 		geom_line() + 
+# 		labs(x="Log 10 Compound Concentration (M)", 
+# 				 y="Predicted Viability",
+# 				 color='',
+# 				 title = paste0(this_cell_line_name, " High Effect")) +
+# 		geom_text(data = data.frame(x=-Inf, y=-Inf,hjust=0,vjust=-0.1,label = line_name_extended),
+# 							aes(x=x, y=y, hjust=hjust, vjust=vjust, label=label), color='black') +
+# 		BerginskiRMisc::theme_berginski() + theme(legend.position="bottom")
+# 	
+# 	null_sort = these_summary %>%
+# 		arrange(null_prox)
+# 	
+# 	null_eff_set = these_predictions %>%
+# 		mutate(drug = fct_relevel(drug,as.character(null_sort$drug))) %>%
+# 		filter(drug %in% null_sort$drug[1:5])
+# 	
+# 	null_eff_plot = ggplot(null_eff_set, aes(x=log10(concentration_M), y=pred_via,color=drug)) +
+# 		geom_point() +
+# 		geom_line() + 
+# 		labs(x="Log 10 Compound Concentration (M)", 
+# 				 y="Predicted Viability",
+# 				 color='',
+# 				 title = paste0(this_cell_line_name, " Null Effect")) +
+# 		BerginskiRMisc::theme_berginski() + theme(legend.position="bottom")
+# 	
+# 	range_sort = these_summary %>%
+# 		arrange(desc(pred_range))
+# 	
+# 	range_pred_set = these_predictions %>%
+# 		mutate(drug = fct_relevel(drug,as.character(range_sort$drug))) %>%
+# 		filter(drug %in% range_sort$drug[1:5])
+# 	
+# 	high_range_plot = ggplot(range_pred_set, aes(x=log10(concentration_M), y=pred_via,color=drug)) +
+# 		geom_point() +
+# 		geom_line() + 
+# 		labs(x="Log 10 Compound Concentration (M)", 
+# 				 y="Predicted Viability",
+# 				 color='',
+# 				 title = paste0(this_cell_line_name, " High Range")) +
+# 		BerginskiRMisc::theme_berginski() + theme(legend.position="bottom")
+# 	
+# 	
+# 	all_plots = high_eff_plot + null_eff_plot + high_range_plot
+# }
+
+```
+
+```{r}
+#analyzing by percent inhibtion
+SUM159_preds = All_preds %>% 
+	filter(depmap_id == 'ACH-001391') %>% 
+	select(-depmap_id)
+
+SUM159_combos_processed = SUM159_combos %>%
+	filter(concentration_M_d1 != 0 & concentration_M_d2 != 0 ) %>%
+	left_join(rename(SUM159_preds, 'single_1_pred_via' = pred_via), 
+					 by = c('drug_1' = 'drug' ,'concentration_M_d1' = 'concentration_M')) %>% 
+	left_join(rename(SUM159_preds, 'single_2_pred_via' = pred_via), 
+					 by = c('drug_2' = 'drug' ,'concentration_M_d2' = 'concentration_M')) %>% 
+	filter(!is.na(single_2_pred_via)) %>%
+	mutate('combo_perc_inhibition' = 1 - pred_via,
+				 'single_1_perc_inhibition' = 1 - single_1_pred_via,
+				 'single_2_perc_inhibition' = 1 - single_2_pred_via) %>% 
+	select(-contains("pred_via")) %>% 
+	mutate('log_conc_1' = log10(concentration_M_d1),
+				 'log_conc_2' = log10(concentration_M_d2))
+
+SUM159_synergy_preds_10perc = SUM159_combos_processed %>% 
+	filter(single_1_perc_inhibition <= 0.1 & single_2_perc_inhibition <= 0.1) %>% 
+	arrange(desc(combo_perc_inhibition))
+	
+SUM159_combos_processed %>% 
+	filter(combo_perc_inhibition >= 0.74) %>% 
+	count(drug_1, drug_2) %>% 
+	View()
+
+SUM159_combos_processed %>% 
+	filter(drug_1 == 'Alvocidib' | drug_2 == 'Alvocidib') %>% 
+	ggplot(aes(combo_perc_inhibition)) +
+	geom_histogram()
+```
+
+```{r}
+#finding synergy by interaction term 
+
+this_data = SUM159_combos_processed
+
+find_interaction = function(this_data) {
+	this_fit = tidy(
+		lm(formula = combo_perc_inhibition ~ 
+										 	concentration_M_d1 + 
+										 	concentration_M_d2 + 
+										 	concentration_M_d1*concentration_M_d2, data = this_data)
+		) 
+		select(term, estimate) %>% 
+		filter(term == 'concentration_M_d1:concentration_M_d2')
+		
+	return(this_fit$estimate)
+}
+
+find_interaction_p_val = function(this_data) {
+	this_fit = tidy(
+		lm(formula = combo_perc_inhibition ~ 
+										 	concentration_M_d1 + 
+										 	concentration_M_d2 + 
+										 	concentration_M_d1*concentration_M_d2, data = this_data)
+		) %>% 
+		select(term, p.value) %>% 
+		filter(term == 'concentration_M_d1:concentration_M_d2')
+		
+	return(this_fit$p.value)
+}
+
+SUM159_synergy_predictions = SUM159_combos_processed %>%
+	group_by(drug_1, drug_2) %>% 
+	nest() %>% 
+	mutate('interaction_term' = map(data, ~ find_interaction(.))) %>% 
+	mutate('interaction_pval' = map(data, ~ find_interaction_p_val(.))) %>% 
+	unnest(cols = c(interaction_term, interaction_pval)) %>% 
+	mutate('adj_p' = p.adjust(interaction_pval, method = "fdr")) %>% 
+	filter(adj_p < 0.05)
+
+SUM159_combos_processed %>%
+	filter(drug_1 == 'Pictilisib' & drug_2 == 'ACTB-1003') %>%
+	ggplot(aes(log_conc_1, combo_perc_inhibition, colour = as.factor(log_conc_2))) +
+	geom_line() +
+	geom_point() +
+	scale_color_viridis_d()
+
+```
+
+```{r}
+#function for finding synergy compound combinations  
+
+process_synergy_data = function(this_cell_line_synergy_data) {
+
+this_cell_line_synergy_data_processed = this_cell_line_synergy_data %>%
+	filter(concentration_M_d1 != 0 & concentration_M_d2 != 0 ) %>%
+	mutate('combo_perc_inhibition' = 1 - pred_via) %>% 
+	select(-contains("pred_via")) %>% 
+	mutate('log_conc_1' = log10(concentration_M_d1),
+				 'log_conc_2' = log10(concentration_M_d2))
+return(this_cell_line_synergy_data_processed)
+}
+
+
+get_synergy_predictions = function(this_cell_line_synergy_data){	
+	
+this_cell_line_synergy_data_processed = this_cell_line_synergy_data %>%
+	filter(concentration_M_d1 != 0 & concentration_M_d2 != 0 ) %>%
+	mutate('combo_perc_inhibition' = 1 - pred_via) %>% 
+	select(-contains("pred_via")) %>% 
+	mutate('log_conc_1' = log10(concentration_M_d1),
+				 'log_conc_2' = log10(concentration_M_d2))
+		
+this_cell_line_synergy_predictions = this_cell_line_synergy_data_processed %>%
+	group_by(drug_1, drug_2) %>% 
+	nest() %>% 
+	mutate('interaction_term' = map(data, ~ find_interaction(.))) %>% 
+	mutate('interaction_pval' = map(data, ~ find_interaction_p_val(.))) %>% 
+	unnest(cols = c(interaction_term, interaction_pval)) %>% 
+	mutate('adj_p' = p.adjust(interaction_pval, method = "fdr")) %>% 
+	select(-data)
+
+return(this_cell_line_synergy_predictions)
+}
+
+HCC1806_combos_processed = process_synergy_data(HCC1806_combos)
+HCC1806_synergy_predictions = get_synergy_predictions(HCC1806_combos)
+
+HCC1806_combos_processed %>%
+	filter(drug_1 == 'PF-562271' & drug_2 == 'Cerdulatinib') %>%
+	ggplot(aes(log_conc_1, combo_perc_inhibition, colour = as.factor(log_conc_2))) +
+	geom_line() +
+	geom_point() +
+	scale_color_viridis_d()
+
+```
+
+```{r}
+HCC1806_combos_processed = process_synergy_data(HCC1806_combos)
+HCC1806_synergy_predictions = get_synergy_predictions(HCC1806_combos)
+
+SUM159_combos_processed = process_synergy_data(SUM159_combos)
+SUM159_synergy_predictions = get_synergy_predictions(SUM159_combos)
+```
+
+```{r}
+#function for creating plots
+this_processed_synergy_data = HCC1806_combos_processed
+these_synergy_predictions = HCC1806_synergy_predictions 
+
+get_interesting_synergy_plots = function(this_processed_synergy_data, these_synergy_predictions) {
+	
+largest_effect_drugs = these_synergy_predictions %>% 
+	arrange(interaction_term)
+largest_effect_drugs = largest_effect_drugs[1,] %>% 
+	select(drug_1, drug_2)
+
+largest_interaction_effect_negative_plot = this_processed_synergy_data %>% 
+	filter(drug_1 == largest_effect_drugs$drug_1 & drug_2 == largest_effect_drugs$drug_2) %>%  
+	ggplot(aes(log_conc_1, combo_perc_inhibition, colour = as.factor(log_conc_2))) +
+	geom_line() +
+	geom_point() +
+	scale_color_viridis_d() +
+	ggtitle('Largest interaction effect (negative)') 
+
+largest_pos_effect_drugs = these_synergy_predictions %>% 
+	arrange(desc(interaction_term))
+largest_pos_effect_drugs = largest_pos_effect_drugs[1,] %>% 
+	select(drug_1, drug_2)
+
+largest_interaction_effect_positive_plot = this_processed_synergy_data %>% 
+	filter(drug_1 == largest_pos_effect_drugs$drug_1 & drug_2 == largest_pos_effect_drugs$drug_2) %>%  
+	ggplot(aes(log_conc_1, combo_perc_inhibition, colour = as.factor(log_conc_2))) +
+	geom_line() +
+	geom_point() +
+	scale_color_viridis_d() +
+	ggtitle('Largest interaction effect (positive)') 
+
+
+median_effect_drugs = these_synergy_predictions %>% 
+	arrange(interaction_term)
+median_effect_drugs = median_effect_drugs[13053,] %>% 
+	select(drug_1, drug_2)
+
+median_effect_plot = this_processed_synergy_data %>% 
+	filter(drug_1 == median_effect_drugs$drug_1 & drug_2 == median_effect_drugs$drug_2) %>%  
+	ggplot(aes(log_conc_1, combo_perc_inhibition, colour = as.factor(log_conc_2))) +
+	geom_line() +
+	geom_point() +
+	scale_color_viridis_d() +
+	ggtitle('Median effect') 
+
+zero_effect_drugs = these_synergy_predictions %>% 
+	filter(interaction_term == 0)
+zero_effect_drugs = zero_effect_drugs[1,] %>% 
+	select(drug_1, drug_2)
+
+zero_effect_plot = this_processed_synergy_data %>% 
+	filter(drug_1 == zero_effect_drugs$drug_1 & drug_2 == zero_effect_drugs$drug_2) %>%  
+	ggplot(aes(log_conc_1, combo_perc_inhibition, colour = as.factor(log_conc_2))) +
+	geom_line() +
+	geom_point() +
+	scale_color_viridis_d() +
+	ggtitle('Zero effect') 
+
+all_plots = largest_interaction_effect_negative_plot + largest_interaction_effect_positive_plot + median_effect_plot + zero_effect_plot + plot_layout(guides="collect")
+
+return(all_plots)
+}
+
+get_synergy_plots_for_query_drugs = function(query_drug_1, 
+																			 query_drug_2, 
+																			 cell_line_processed_synergy_data) {
+	cell_line_processed_synergy_data %>%
+	filter(drug_1 == query_drug_1 & query_drug_2 == drug_2) %>%
+	ggplot(aes(log_conc_1, combo_perc_inhibition, colour = as.factor(log_conc_2))) +
+	geom_line() +
+	geom_point() +
+	scale_color_viridis_d() +
+	ggtitle(paste0(query_drug_1,"+",query_drug_2))
+}
+
+```
+
+```{r}
+HCC1806_interesting_plots = get_interesting_synergy_plots(
+	this_processed_synergy_data = HCC1806_combos_processed,
+	these_synergy_predictions = HCC1806_synergy_predictions)
+ggsave(here('figures/synergy_preds/HCC1806_syngery_plots.png'), width = 10, height = 7)
+
+SUM159_interesting_plots = get_interesting_synergy_plots(
+	this_processed_synergy_data = SUM159_combos_processed,
+	these_synergy_predictions = SUM159_synergy_predictions)
+ggsave(here('figures/synergy_preds/SUM159_syngery_plots.png'), width = 10, height = 7)
+
+#top 4 HCC1806 drugs synergistic
+get_top_4_synergy_plot(these_synergy_predictions = HCC1806_synergy_predictions,
+												this_processed_synergy_data = HCC1806_combos_processed)
+
+ggsave(here('figures/synergy_preds/HCC1806_top4_syngery_plots.png'), width = 10, height = 7)
+
+get_top_4_synergy_plot(these_synergy_predictions = SUM159_synergy_predictions,
+												this_processed_synergy_data = SUM159_combos_processed)
+
+ggsave(here('figures/synergy_preds/SUM159_top4_syngery_plots.png'), width = 10, height = 7)
+
+
+#top 4 SUM159 drugs synergistic
+top_4_SUM159_synergy_drugs = SUM159_synergy_predictions %>% 
+	arrange(interaction_term)
+top_4_SUM159_synergy_drugs = top_4_SUM159_synergy_drugs[1:4,] %>% 
+	select(drug_1, drug_2)
+
+
+```
+
+
+```{r}
+#function for getting top 4plot
+
+get_top_4_synergy_plot = function(these_synergy_predictions, this_processed_synergy_data) {
+
+these_top_4_synergy_predictions = these_synergy_predictions %>% 
+arrange(interaction_term)
+these_top_4_synergy_predictions = these_top_4_synergy_predictions[1:4,] %>% 
+	select(drug_1, drug_2) 
+
+this_top_4_plot = (get_synergy_plots_for_query_drugs(
+	these_top_4_synergy_predictions$drug_1[1], 
+	these_top_4_synergy_predictions$drug_2[1], 
+	HCC1806_combos_processed) |
+	get_synergy_plots_for_query_drugs(
+	these_top_4_synergy_predictions$drug_1[2], 
+	these_top_4_synergy_predictions$drug_2[2], 
+	HCC1806_combos_processed)) /
+	(get_synergy_plots_for_query_drugs(
+	these_top_4_synergy_predictions$drug_1[3], 
+	these_top_4_synergy_predictions$drug_2[3],
+	HCC1806_combos_processed) |
+	get_synergy_plots_for_query_drugs(
+	these_top_4_synergy_predictions$drug_1[4], 
+	these_top_4_synergy_predictions$drug_2[4],
+	HCC1806_combos_processed)) +
+	plot_layout(guides="collect") +
+	plot_annotation(
+  title = paste0('Top 4 ', this_processed_synergy_data$DepMap_ID[1], ' Synergistic Predictions'))
+return(this_top_4_plot)
+}
+
+ggsave(here('figures/synergy_preds/HCC1806_top4_syngery_plots.png'), width = 10, height = 7)
+```
+
+```{r}
+SUM159_preds = All_preds %>% 
+	filter(depmap_id == 'ACH-001391') %>% 
+	select(-depmap_id)
+
+SUM159_combos_comparisons = SUM159_combos %>%
+	filter(concentration_M_d1 != 0 & concentration_M_d2 != 0 ) %>%
+	left_join(rename(SUM159_preds, 'single_1_pred_via' = pred_via), 
+					 by = c('drug_1' = 'drug' ,'concentration_M_d1' = 'concentration_M')) %>% 
+	left_join(rename(SUM159_preds, 'single_2_pred_via' = pred_via), 
+					 by = c('drug_2' = 'drug' ,'concentration_M_d2' = 'concentration_M')) %>% 
+	filter(!is.na(single_2_pred_via)) %>%
+	mutate('combo_perc_inhibition' = 1 - pred_via,
+				 'single_1_perc_inhibition' = 1 - single_1_pred_via,
+				 'single_2_perc_inhibition' = 1 - single_2_pred_via) %>% 
+	select(-contains("pred_via")) %>% 
+	mutate('log_conc_1' = log10(concentration_M_d1),
+				 'log_conc_2' = log10(concentration_M_d2)) %>% 
+	mutate('delta' = (single_1_perc_inhibition + single_2_perc_inhibition) - 
+					combo_perc_inhibition) %>% 
+	mutate('delta_bliss' = combo_perc_inhibition - (single_1_perc_inhibition + single_2_perc_inhibition -single_1_perc_inhibition*single_2_perc_inhibition))
+
+SUM159_synergy_scores = SUM159_combos_comparisons %>% 
+	group_by(drug_1, drug_2) %>%
+	summarise('delta' = sum((single_1_perc_inhibition + single_2_perc_inhibition) - 
+					combo_perc_inhibition),
+					'delta_bliss' = sum(delta_bliss),
+					'mean_single_1' = mean(single_1_perc_inhibition),
+					'mean_single_2' = mean(single_2_perc_inhibition))
+
+OTS_AMG = SUM159_combos_comparisons %>% 
+	filter(drug_1 == 'OTS-167', drug_2 == 'AMG-208')
+
+Danu_BGT = SUM159_combos_comparisons %>% 
+	filter(drug_1 == 'Omipalisib', drug_2 == 'Masitinib')
+
+get_synergy_plots_for_query_drugs(query_drug_1 = 'Danusertib', query_drug_2 = 'BGT-226', cell_line_processed_synergy_data = SUM159_combos_processed)
+
+
+```
+
+```{r}
+SUM159_synergy_predictions %>% 
+	ggplot(aes(x = interaction_term)) + 
+	geom_histogram()
+
+get_synergy_plots_for_query_drugs(query_drug_1 = 'Ruxolitinib', query_drug_2 = 'Rabusertib', cell_line_processed_synergy_data = SUM159_combos_processed)
+
+```
+
+```{r}
+#back to viability
+SUM159_via_combos_comparisons = SUM159_combos %>%
+	filter(concentration_M_d1 != 0 & concentration_M_d2 != 0 ) %>%
+	left_join(rename(SUM159_preds, 'single_1_pred_via' = pred_via), 
+					 by = c('drug_1' = 'drug' ,'concentration_M_d1' = 'concentration_M')) %>% 
+	left_join(rename(SUM159_preds, 'single_2_pred_via' = pred_via), 
+					 by = c('drug_2' = 'drug' ,'concentration_M_d2' = 'concentration_M')) %>%
+	rename('combo_pred_via' = pred_via) %>% 
+	mutate('log_conc_1' = log10(concentration_M_d1),
+				 'log_conc_2' = log10(concentration_M_d2)) %>%
+	mutate('delta' = combo_pred_via - (single_1_pred_via*single_2_pred_via))
+
+All_preds_means = All_preds %>% 
+	group_by(drug) %>% 
+	summarise('mean_via' = mean(pred_via))	 
+
+SUM159_via_synergy_scores = SUM159_via_combos_comparisons %>% 
+	group_by(drug_1, drug_2) %>%
+	summarise('mean_delta' = mean(delta),
+						'mean_combo_pred' = mean(combo_pred_via)) %>% 
+	filter(mean_combo_pred < 1) %>% 
+	arrange(mean_delta) %>% 
+	left_join(All_preds_means, by = c('drug_1' = 'drug')) %>% 
+	rename('mean_via_1' = mean_via) %>% 
+	left_join(All_preds_means, by = c('drug_2' = 'drug')) %>% 
+	rename('mean_via_2' = mean_via) 
+
+SUM159_via_synergy_scores %>% 
+	ggplot(aes(x = mean_combo_pred)) +
+	geom_histogram()
+
+Ora_masit = SUM159_via_combos_comparisons %>% 
+	filter(drug_1 == 'Orantinib', drug_2 == 'Cyc-116')
+
+get_synergy_plots_for_query_drugs(query_drug_1 = 'Dasatinib', query_drug_2 = 'AMG-208', cell_line_processed_synergy_data = SUM159_combos_processed)
+
+All_preds_means = All_preds %>% 
+	group_by(drug) %>% 
+	summarise('mean_via' = mean(pred_via))
+
+```
+

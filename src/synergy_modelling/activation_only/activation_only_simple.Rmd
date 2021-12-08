@@ -1,0 +1,264 @@
+---
+title: "ALMANAC modelling with simple klaeger vectors"
+output: html_document
+---
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(tidymodels)
+library(tictoc)
+library(doParallel)
+library(patchwork)
+library(ROCR)
+
+knitr::opts_knit$set(root.dir = here())
+```
+
+```{r}
+#read in data 
+ALMANAC_klaeger_data = read_csv(here('results/ALMANAC_klaeger_data_for_ml_simple.csv')) %>% 
+	select(-CONC1, -CONC2) %>% 
+	rename('concentration_M_d1' = nearest_klaeger_dose_1,
+				 'concentration_M_d2' = nearest_klaeger_dose_2)
+
+```
+
+```{r}
+#excluding viability > 1
+model_data = ALMANAC_klaeger_data %>% 
+	filter(viability <=1)
+	
+model_data_long = model_data %>% 
+	pivot_longer(starts_with(c('act', 'exp', 'conc')), names_to = 'feature', values_to = 'value')
+
+variable_genes = model_data_long %>% 
+	group_by(feature) %>% 
+	summarise(var = var(value)) %>% 
+	filter(var > 0)
+
+final_model_data = model_data %>% 
+	select(CELLNAME, DepMap_ID, drug1, drug2, concentration_M_d1, concentration_M_d2, viability, any_of(variable_genes$feature))
+
+# data_split <- initial_split(final_model_data, prop = 9/10)
+# 
+# train_data <- training(data_split)
+# test_data  <- testing(data_split)
+
+
+#continuous data feature selection 
+
+find_feature_correlations <- function(row_indexes = NA, all_data) {
+	if (is.na(row_indexes)) {
+		row_indexes = 1:dim(all_data)[1]
+	}
+	
+	all_cor = cor(
+		all_data %>% pull(viability), all_data %>% select(starts_with(c('act', 'exp', 'conc')))
+		) %>%
+		as.data.frame() %>%
+		pivot_longer(everything(), names_to = "feature",values_to = "cor")
+	
+	
+	all_correlations = all_cor %>% 
+		mutate(abs_cor = abs(cor)) %>% 
+		arrange(desc(abs_cor)) %>% 
+		mutate(rank = 1:n()) %>%
+		mutate(feature_type = case_when(
+			str_detect(feature, "^act_") ~ "Activation",
+			str_detect(feature, "^exp_") ~ "Expression",
+			T ~ feature
+		))
+
+	return(all_correlations)	
+}
+
+feature_correlations = find_feature_correlations(all_data = final_model_data)
+
+# feature_correlations %>% 
+# 	filter(feature_type == 'Expression') %>% 
+# 	ggplot(aes(x = abs_cor)) +
+# 	geom_histogram()
+# ggsave(here('figures/ALMANAC_modelling/simple/Expression_correlations.png'))
+# 
+# feature_correlations %>% 
+# 	filter(feature_type == 'Activation') %>% 
+# 	ggplot(aes(x = abs_cor)) +
+# 	geom_histogram()
+# ggsave(here('figures/ALMANAC_modelling/simple/Activation_correlations.png'))
+# 
+# model_data_long %>% 
+# 	filter(str_detect(feature, "^exp_")) %>% 
+# 	ggplot(aes(x = value)) +
+# 	geom_histogram()
+# ggsave(here('figures/ALMANAC_modelling/simple/Expression_data_distribution.png'))
+# 
+# model_data_long %>% 
+# 	filter(str_detect(feature, "^act_")) %>% 
+# 	ggplot(aes(x = value)) +
+# 	geom_histogram()
+# ggsave(here('figures/ALMANAC_modelling/simple/Activation_data_distribution.png'))
+
+```
+
+```{r}
+#build classification model 10-fold CV
+
+get_classification_fit = function(num_trees, final_model_data) {
+data = final_model_data %>% 
+	select(any_of(feature_correlations$feature),
+					 CELLNAME, DepMap_ID, drug1, drug2, concentration_M_d1, concentration_M_d2, viability
+					 ) %>% 
+	mutate(viability_binary = as.factor(if_else(
+		viability > median(viability),
+		0,
+		1
+	))) %>% 
+	select(-viability)
+
+folds = vfold_cv(data, v = 10)
+
+recipe = recipe(viability_binary ~ ., data) %>%
+	update_role(-starts_with(c("act_", "exp_", "viability", 'conc' )),
+							new_role = "id variable")
+
+rand_forest_spec <- rand_forest(
+	trees = num_trees
+) %>% set_engine("ranger") %>%
+	set_mode("classification")
+
+wflow <- 
+  workflow() %>% 
+  add_model(rand_forest_spec) %>% 
+  add_recipe(recipe)
+
+ctrl <- control_resamples(save_pred = TRUE)
+
+fit <- 
+  wflow %>% 
+  fit_resamples(folds, control = ctrl)
+
+return(fit)
+}
+
+fit_500 = get_classification_fit(500, final_model_data)
+metrics_500 = collect_metrics(fit_500)
+predictions_500 = collect_predictions(fit_500)
+
+roc_curve = predictions_500 %>%
+	roc_curve(truth = viability_binary, .pred_0) %>%
+	autoplot() + 
+	ggtitle(round(metrics_500$mean[2], 4))
+
+
+pr_curve = predictions_500 %>%
+	pr_curve(truth = viability_binary, .pred_0) %>%
+	autoplot() +
+	ggtitle(round(metrics_500$mean[1], 4))
+
+c = roc_curve + pr_curve + plot_annotation(title = '10-fold CV ALMANAC Classification Model Results',
+																					 subtitle = 'Classify Viability Below Median')
+
+ggsave(here('figures/ALMANAC_modelling/activation_only/simple/classification_model_results_500_trees.png'))
+
+
+fit_1000 = get_classification_fit(1000, final_model_data)
+metrics_1000 = collect_metrics(fit_1000)
+predictions_1000 = collect_predictions(fit_1000)
+
+roc_curve = predictions_1000 %>%
+	roc_curve(truth = viability_binary, .pred_0) %>%
+	autoplot() + 
+	ggtitle(round(metrics_1000$mean[2], 4))
+
+
+pr_curve = predictions_1000 %>%
+	pr_curve(truth = viability_binary, .pred_0) %>%
+	autoplot() +
+	ggtitle(round(metrics_1000$mean[1], 4))
+
+c = roc_curve + pr_curve + plot_annotation(title = '10-fold CV ALMANAC Classification Model Results',
+																					 subtitle = 'Classify Viability Below Median')
+
+ggsave(here('figures/ALMANAC_modelling/activation_only/simple/classification_model_results_1000_trees.png'))
+
+fit_1500 = get_classification_fit(1500, final_model_data)
+metrics_1500 = collect_metrics(fit_1500)
+predictions_1500 = collect_predictions(fit_1500)
+
+roc_curve = predictions_1500 %>%
+	roc_curve(truth = viability_binary, .pred_0) %>%
+	autoplot() + 
+	ggtitle(round(metrics_1500$mean[2], 4))
+
+
+pr_curve = predictions_1500 %>%
+	pr_curve(truth = viability_binary, .pred_0) %>%
+	autoplot() +
+	ggtitle(round(metrics_1500$mean[1], 4))
+
+c = roc_curve + pr_curve + plot_annotation(title = '10-fold CV ALMANAC Classification Model Results',
+																					 subtitle = 'Classify Viability Below Median')
+
+ggsave(here('figures/ALMANAC_modelling/activation_only/simple/classification_model_results_1500_trees.png'))
+```
+
+```{r}
+get_regression_fit = function(num_trees, final_model_data) {
+data = final_model_data %>% 
+	select(any_of(feature_correlations$feature),
+					 CELLNAME, DepMap_ID, drug1, drug2, concentration_M_d1, concentration_M_d2, viability
+					 ) 
+
+folds = vfold_cv(data, v = 10)
+
+recipe = recipe(viability ~ ., data) %>%
+	update_role(-starts_with(c("act_", "exp_", "viability", 'conc')),
+							new_role = "id variable")
+
+rand_forest_spec <- rand_forest(
+	trees = num_trees
+) %>% set_engine("ranger") %>%
+	set_mode("regression")
+
+wflow <- 
+  workflow() %>% 
+  add_model(rand_forest_spec) %>% 
+  add_recipe(recipe)
+
+ctrl <- control_resamples(save_pred = TRUE)
+
+fit <- 
+  wflow %>% 
+  fit_resamples(folds, control = ctrl)
+
+return(fit)
+}
+
+fit_500 = get_regression_fit(500, final_model_data)
+metrics_500 = collect_metrics(fit_500)
+predictions_500 = collect_predictions(fit_500) %>% 
+	rename('predicted_viability' = .pred)
+
+predictions_500 %>% 
+	ggplot(aes(x = viability, y = predicted_viability)) +
+	geom_hex() +
+	scale_fill_gradient(low="lightblue1",high="darkblue",trans="log10") +
+	geom_smooth() +
+	labs(title = paste0('Correlation = ', 
+											round(
+												cor(predictions_500$viability, 
+														predictions_500$predicted_viability),
+												4),
+											', R-Squared = ', round(
+												metrics_500$mean[2],
+												4),
+											', RMSE = ', round(metrics_500$mean[1],
+																				 4))) + 
+	geom_abline(intercept = 0, slope = 1, size = 0.5, colour = 'red') +
+	xlim(0,1) +
+	ylim(0,1)
+
+
+ggsave(here('figures/ALMANAC_modelling/activation_only/simple/regression_model_results_500_trees.png'))
+```
+

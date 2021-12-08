@@ -1,0 +1,21 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(IDACombo)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+All_preds = read_rds(here('results/model_predictions_1500feat.rds'))
+```
+
+```{r}
+All_IDA_preds = IDAPredict.2drug(Monotherapy_Data = All_preds, Cell_Line_Name_Column = 'depmap_id', Drug_Name_Column = 'drug', Drug_Concentration_Column = 'concentration_M', Efficacy_Column = 'pred_via', LowerEfficacyIsBetterDrugEffect = T, Drug1 = 'UCN-01', Drug2 = 'AT-9283', Efficacy_Metric_Name = 'Percent_viability', Calculate_Uncertainty = F)
+
+```
+

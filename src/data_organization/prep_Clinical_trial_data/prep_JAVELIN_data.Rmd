@@ -1,0 +1,31 @@
+#prep JAVELIN data 
+
+```{r}
+library(tidyverse)
+library(here)
+```
+
+```{r}
+#read in data 
+metadata = read_csv(here('data/Clinical_Data/JAVELIN/metadata.csv'))
+rnaseq_data = read_csv(here('data/Clinical_Data/JAVELIN/rnaseq_data.csv'), skip = 1)
+```
+
+```{r}
+#data processing
+
+rnaseq_data_long = rnaseq_data %>% 
+	pivot_longer(-HUGO, names_to = 'patient', values_to = 'TPM') %>% 
+	rename('hgnc_symbol' = HUGO) %>% 
+	group_by(hgnc_symbol, patient) %>% 
+	summarise(mean_TPM = mean(TPM))
+
+	
+rnaseq_data_wide = rnaseq_data_long %>% 
+	left_join(select(metadata, ID, PFS_P, TRT01P), by = c('patient' = 'ID'))  %>%
+	rename('treatment' = TRT01P) %>% 
+	pivot_wider(names_from = hgnc_symbol, values_from = mean_TPM)
+	
+write_csv(rnaseq_data_wide, here('data/Clinical_Data/JAVELIN/JAVELIN_data_for_ml.csv'))
+```
+

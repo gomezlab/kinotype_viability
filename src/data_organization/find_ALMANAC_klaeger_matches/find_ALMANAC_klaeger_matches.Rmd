@@ -1,0 +1,97 @@
+---
+title: "Find ALMANAC-Klaeger Drug Matches"
+author: "Chinmaya Joisa"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(readxl)
+library(webchem)
+```
+
+```{r}
+#READING IN DATA
+klaeger = read_rds(here('results/klaeger_full_tidy.rds'))
+
+ALMANAC_druglist = read_tsv(here('data/ALMANAC/ComboCompoundNames.txt'), col_names = FALSE)
+```
+
+```{r}
+#DATA PROCESSING
+ALMANAC_matchlist = ALMANAC_druglist %>% 
+	rename("ALMANAC_name" = X2, 'NSC' = X1)
+```
+
+```{r}
+#CREATING MATCH SETS
+
+klaeger_cid = get_cid(unique(klaeger$drug), from = "name", domain = "compound", match = "all") %>% 
+	rename("klaeger_name" = query)
+
+ALMANAC_cid = get_cid(unique(ALMANAC_matchlist$ALMANAC_name), from = "name", domain = "compound", match = "all") %>% 
+	rename("ALMANAC_name" = query)
+	
+matches = klaeger_cid %>% 
+	left_join(ALMANAC_cid, by = 'cid') %>% 
+	filter(!is.na(ALMANAC_name))
+
+klaeger_no_matches = klaeger_cid %>%
+	filter(!cid %in% matches$cid)
+
+ALMANAC_no_matches = ALMANAC_cid %>%
+	filter(!cid %in% matches$cid)
+```
+
+```{r}
+#Write Output Files
+write_csv(
+	klaeger_no_matches, here('src/data_organization/find_ALMANAC_Klaeger_matches/no_clear_match_klaeger_drug_list.csv'))
+write_csv(ALMANAC_no_matches, here('src/data_organization/find_ALMANAC_Klaeger_matches/no_clear_match_ALMANAC_drug_list.csv'))
+write_csv(matches, here('src/data_organization/find_ALMANAC_Klaeger_matches/ALMANAC_Klaeger_matches.csv'))
+```
+
+```{r}
+#ALMANAC ids in klaeger
+matched_ids = c(757441, 756645, 732517, 718781, 715055, 743414, 745750, 747599, 737754, 763371, 747971, 750690, 760766, 761431, 753082) 
+
+matched_drugs = c('Axitinib', 'Crizotinib', 'Dasatinib', 'Erlotinib hydrochloride', 'Gefitinib', 'Imatinib mesylate', 'Lapatinib ditosylate', 'Nilotinib', 'Pazopanib hydrochloride', 'Ruxolitinib', 'Sorafenib tosylate', 'Sunitinib (free base)', 'Vandetanib', 'vemurafenib', 'vemurafenib')
+
+klaeger_name = c('Axitinib', 'Crizotinib', 'Dasatinib', 'Erlotinib', 'Gefitinib', 'Imatinib', 'Lapatinib', 'Nilotinib', 'Pazopanib', 'Ruxolitinib', 'Sorafenib', 'Sunitinib', 'Vandetanib', 'Vemurafenib', 'Vemurafenib')
+
+ALMANAC_matches = bind_cols(as.data.frame(matched_ids), as.data.frame(matched_drugs), as.data.frame(klaeger_name)) %>% 
+	rename('ALMANAC_name' = matched_drugs, 
+				 'ALMANAC_id' = matched_ids)
+
+write_csv(ALMANAC_matches, here('src/data_organization/find_ALMANAC_klaeger_matches/ALMANAC_klaeger_matchlist.csv'))
+```
+
+```{r}
+ALMANAC_unmatched = ALMANAC_matchlist %>% 
+	filter(!ALMANAC_name %in% ALMANAC_matches$ALMANAC_name)
+
+klaeger_unmatched = klaeger %>% 
+	select(drug) %>% 
+	unique() %>% 
+	filter(!drug %in% ALMANAC_matches$klaeger_name)
+
+klaeger_cid = read_csv(here('results/klaeger_cids.csv')) %>% 
+	mutate(cid = as.character(cid))
+
+ALMANAC_cid = get_cid(unique(ALMANAC_unmatched$ALMANAC_name), from = "name", domain = "compound", match = "all", verbose = TRUE) %>% 
+	rename("ALMANAC_name" = query)
+	
+second_try_matches = klaeger_cid %>% 
+	left_join(ALMANAC_cid, by = 'cid') %>% 
+	filter(!is.na(ALMANAC_name))
+
+klaeger_no_matches = klaeger_cid %>%
+	filter(!cid %in% second_try_matches$cid)
+
+ALMANAC_no_matches = ALMANAC_cid %>%
+	filter(!cid %in% second_try_matches$cid)
+
+```
+
