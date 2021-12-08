@@ -12,4 +12,11 @@ for (this_fold_id in unique(fold_ids)) {
 	
 	# print(command)
 	system(command)
+	
+	job_name = sprintf('clust_%d',this_fold_id)
+	
+	command = sprintf('sbatch --job-name=%s --mem=350G --time=7-00:00:00 --wrap "./get_feat_set_cluster_rep.R --CV_fold_ID %d"', job_name, this_fold_id)
+	
+	# print(command)
+	system(command)
 }
