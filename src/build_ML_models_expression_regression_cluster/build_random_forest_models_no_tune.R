@@ -34,7 +34,7 @@ pred_output_file = here('results/single_model_expression_regression_cluster/',
 feature_cor = read_rds(here('results/single_model_expression_regression_cluster/CV_feature_cors/',
 														sprintf('%04d.rds',args$CV_fold_ID)))
 
-cluster_result = read_rds(here('results/single_model_expression_regression_cluster/cluster_sets/',
+cluster_result = read_rds(here('results/single_model_expression_regression_cluster/CV_cluster_sets/',
 														sprintf('%04d.rds',args$CV_fold_ID)))
 
 fold_ids = read_rds(here('results/single_model_expression_regression_cluster/CV_split_row_nums.rds'))

@@ -20,10 +20,10 @@ parser$add_argument('--CV_fold_ID', default = 1, type="integer")
 
 args = parser$parse_args()
 
-dir.create(here('results/single_model_expression_regression_cluster_cluster/cluster_sets'),
+dir.create(here('results/single_model_expression_regression_cluster/CV_cluster_sets'),
 					 showWarnings = F, recursive = T)
 
-cluster_file = here('results/single_model_expression_regression_cluster_cluster/CV_cluster_sets',
+cluster_file = here('results/single_model_expression_regression_cluster/CV_cluster_sets',
 											sprintf('%04d.rds', args$CV_fold_ID))
 
 ###############################################################################
