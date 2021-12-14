@@ -28,7 +28,7 @@ PRISM_klaeger_imputed = PRISM_klaeger_imputed %>%
 	filter(depmap_id %in% CCLE_data$DepMap_ID) %>%
 	ungroup()
 
-data_for_model_production = read_rds(here('results/single_model_expression_regression/full_model_data_set_1500feat.rds'))
+data_for_model_production = read_rds(here('results/single_model_expression_regression/full_model_data_set_500feat.rds'))
 ```
 
 ```{r}
@@ -57,8 +57,8 @@ not_tested_data = non_tested_combos %>%
 
 ```{r}
 tic()
-if (file.exists(here('results/single_model_expression_regression/final_model_1500feat.rds'))) {
-	rand_forest_model = read_rds(here('results/single_model_expression_regression/final_model_1500feat.rds'))
+if (file.exists(here('results/single_model_expression_regression/final_model_500feat.rds'))) {
+	rand_forest_model = read_rds(here('results/single_model_expression_regression/final_model_500feat.rds'))
 } else {
 	
 	PRISM_klaeger_recipe = recipe(target_viability ~ ., data_for_model_production) %>%
@@ -78,7 +78,7 @@ if (file.exists(here('results/single_model_expression_regression/final_model_150
 	
 	rand_forest_model = rand_forest_wf %>%
 		fit(data = data_for_model_production) %>%
-		write_rds(here('results/single_model_expression_regression/final_model_1500feat.rds'), compress = 'gz')
+		write_rds(here('results/single_model_expression_regression/final_model_500feat.rds'), compress = 'gz')
 	
 }
 toc()
@@ -106,6 +106,6 @@ for (this_conc in unique(not_tested_data$concentration_M)) {
 
 model_predictions %>%
 	arrange(depmap_id,drug,concentration_M) %>%
-	write_rds(here('results/single_model_expression_regression/model_predictions_1500feat.rds'), compress = 'gz')
+	write_rds(here('results/single_model_expression_regression/model_predictions_500feat.rds'), compress = 'gz')
 toc()
 ```
