@@ -26,7 +26,7 @@ all_pred = data.frame()
 ```{r}
 tic()
 
-for (feat_count in c(100,200,300,400,500,1000,1500,2000)) {
+for (feat_count in c(100,200,300,400,500,600,700,800,900,1000,1500,2000)) {
 	model_files = Sys.glob(here('results/single_model_expression_regression/rand_forest/',
 															sprintf('%dfeat_notune_pred',feat_count),
 															"*"))
@@ -108,6 +108,8 @@ for (feat_count in c(100,200,300,400,500,1000,1500,2000)) {
 toc()
 ```
 
+
+
 # Naive Average Model
 
 ```{r}
@@ -178,7 +180,7 @@ dir.create(here('figures/single_model_expression'), recursive = T)
 r2_plot = ggplot(model_summary, 
 								 aes(y=r2_estimate,x=feat_count, color=model_type_FN, shape=model_type_FN)) + 
 	geom_hline(aes(yintercept = naive_average_r2), linetype = 2, alpha = 0.5) +
-	geom_point(size=2) + 
+	geom_point(size=1.5) + 
 	# geom_errorbar(aes(ymin=r2_conf.low,ymax=r2_conf.high)) +
 	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
 	# scale_x_continuous(breaks=c(200,500,1000,1500)) +
@@ -188,7 +190,7 @@ r2_plot = ggplot(model_summary,
 rmse_plot = ggplot(model_summary, 
 									 aes(y=rmse_estimate,x=feat_count, color=model_type_FN, shape=model_type_FN)) + 
 	geom_hline(aes(yintercept = naive_average_rmse), linetype = 2, alpha = 0.5) +
-	geom_point(size=2) + 
+	geom_point(size=1.5) + 
 	# geom_errorbar(aes(ymin=rmse_conf.low,ymax=rmse_conf.high)) +
 	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
 	# scale_x_continuous(breaks=c(200,500,1000,1500)) +
@@ -234,31 +236,87 @@ BerginskiRMisc::trimImage(here('figures/single_model_expression/model_comparison
 # BerginskiRMisc::trimImage(here('figures/single_model_expression/rand_forest_feature_counts.png'))
 ```
 
+# Rand Forest Tuning Assessment
+
 ```{r}
-# dir.create(here('figures/single_model_expression'), recursive = T)
-# 
-# r2_plot = ggplot(model_summary %>% 
-# 								 	filter(feat_count %in% c(500,1000,1500,2000), model_type == "rand_forest"), 
-# 								 aes(y=r2_estimate,x=as.factor(feat_count), color=as.factor(trees))) + 
-# 	geom_point(position=position_dodge(width=0.5)) + 
-# 	geom_errorbar(aes(ymin=r2_conf.low,ymax=r2_conf.high),
-# 								position=position_dodge(width=0.5)) +
-# 	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-# 	labs(x="Number of Features",y="Mean R\u00B2",color="# Trees") +
-# 	BerginskiRMisc::theme_berginski()
-# 
-# rmse_plot = ggplot(model_summary %>% 
-# 									 	filter(feat_count %in% c(500,1000,1500,2000), model_type == "rand_forest"),
-# 									 aes(y=rmse_estimate,x=as.factor(feat_count), color=as.factor(trees))) + 
-# 	geom_point(position=position_dodge(width=0.5)) +
-# 	geom_errorbar(aes(ymin=rmse_conf.low,ymax=rmse_conf.high),
-# 								position=position_dodge(width=0.5)) +
-# 	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-# 	labs(x="Number of Features",y="Mean RMSE",color="# Trees") +
-# 	BerginskiRMisc::theme_berginski()
-# 
-# ggsave(here('figures/single_model_expression/rand_forest_tree_count.png'),r2_plot + rmse_plot,width=8,height=4)
-# BerginskiRMisc::trimImage(here('figures/single_model_expression/rand_forest_tree_count.png'))
+model_tuning_results = data.frame()
+tic()
+
+for (feat_count in c(500,1000,1500,2000)) {
+	for (tree_count in c(1000,1500,2000)) {
+		model_files = Sys.glob(here('results/single_model_expression_regression/rand_forest_tune/',
+																sprintf('%dfeat_%dtrees_pred',feat_count,tree_count),
+																"*"))
+		
+		for (this_file in model_files) {
+			these_cv_results = read_rds(this_file) %>%
+				mutate(fold_file = basename(this_file),
+							 feat_count = feat_count)
+			
+			model_tuning_results = bind_rows(
+				model_tuning_results,
+				data.frame(feat_count = feat_count,
+									 fold_file = basename(this_file),
+									 tree_count = tree_count,
+									 rmse = sqrt(mean((these_cv_results$.pred - these_cv_results$target_viability)^2)),
+									 r2 = glance(summary(lm(these_cv_results$.pred ~ these_cv_results$target_viability)))$r.squared))
+		}
+	}
+}
+
+for (feat_count in c(100,200,300,400,500,600,700,800,900,1000,1500,2000)) {
+	model_files = Sys.glob(here('results/single_model_expression_regression/rand_forest/',
+															sprintf('%dfeat_notune_pred',feat_count),
+															"*"))
+	
+	for (this_file in model_files) {
+		these_cv_results = read_rds(this_file) %>%
+			mutate(fold_file = basename(this_file),
+						 feat_count = feat_count)
+		
+		model_tuning_results = bind_rows(
+			model_tuning_results,
+			data.frame(feat_count = feat_count,
+								 tree_count = 500,
+								 fold_file = basename(this_file),
+								 rmse = sqrt(mean((these_cv_results$.pred - these_cv_results$target_viability)^2)),
+								 r2 = glance(summary(lm(these_cv_results$.pred ~ these_cv_results$target_viability)))$r.squared))
+	}
+	
+}
+
+model_tuning_results_summary = model_tuning_results %>% 
+	group_by(feat_count,tree_count) %>% 
+	nest() %>%
+	mutate(rmse = map(data, ~ tidy(t.test(.x$rmse)))) %>%
+	mutate(r2 = map(data, ~ tidy(t.test(.x$r2)))) %>%
+	unnest(cols=c(rmse,r2),names_sep = "_") %>%
+	select(feat_count,tree_count,r2_estimate,rmse_estimate,everything())
+
+toc()
+```
+
+```{r}
+r2_plot = ggplot(model_tuning_results_summary,
+								 aes(y=r2_estimate,x=as.factor(feat_count), color=as.factor(tree_count))) +
+	geom_point(position=position_dodge(width=0.5)) +
+	geom_errorbar(aes(ymin=r2_conf.low,ymax=r2_conf.high),
+								position=position_dodge(width=0.5)) +
+	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+	labs(x="Number of Features",y="Mean R\u00B2",color="# Trees") +
+	BerginskiRMisc::theme_berginski()
+
+rmse_plot = ggplot(model_tuning_results_summary,
+									 aes(y=rmse_estimate,x=as.factor(feat_count), color=as.factor(tree_count))) +
+	geom_point(position=position_dodge(width=0.5)) +
+	geom_errorbar(aes(ymin=rmse_conf.low,ymax=rmse_conf.high),
+								position=position_dodge(width=0.5)) +
+	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+	labs(x="Number of Features",y="Mean RMSE",color="# Trees") +
+	BerginskiRMisc::theme_berginski()
+
+ggsave(here('figures/single_model_expression/rand_forest_tree_count.png'),r2_plot + rmse_plot,width=12,height=6)
+BerginskiRMisc::trimImage(here('figures/single_model_expression/rand_forest_tree_count.png'))
 
 ```
 
@@ -282,7 +340,7 @@ summary_text = paste0("R\u00B2: ",signif(best_model_summary$r2_estimate,3), "\n"
 											"RMSE: ",signif(best_model_summary$rmse_estimate,3))
 
 summary_title = paste0("R\u00B2: ",signif(best_model_summary$r2_estimate,3), " / ",
-											"RMSE: ",signif(best_model_summary$rmse_estimate,3))
+											 "RMSE: ",signif(best_model_summary$rmse_estimate,3))
 
 ggplot(best_pred, aes(x=target_viability,y=.pred)) +
 	stat_binhex(aes(fill=log10(..count..))) +
