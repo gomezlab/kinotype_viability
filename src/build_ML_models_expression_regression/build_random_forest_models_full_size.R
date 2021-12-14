@@ -20,16 +20,8 @@ dir.create(here('results/single_model_expression_regression/',
 								sprintf('rand_forest/%dfeat_notune/',args$feature_num)), 
 					 showWarnings = F, recursive = T)
 
-full_output_file = here('results/single_model_expression_regression/', 
-									 sprintf('rand_forest/%dfeat_notune/',args$feature_num),
-									 sprintf('fold%04d_test.rds',args$CV_fold_ID))
-
 dir.create(here('results/single_model_expression_regression/', 
 								sprintf('rand_forest/%dfeat_notune_pred/',args$feature_num)), showWarnings = F)
-
-pred_output_file = here('results/single_model_expression_regression/', 
-									 sprintf('rand_forest/%dfeat_notune_pred/',args$feature_num),
-									 sprintf('fold%04d_test.rds',args$CV_fold_ID))
 
 feature_cor = read_rds(here('results/single_model_expression_regression/CV_feature_cors/',
 														sprintf('%04d.rds',args$CV_fold_ID)))
@@ -85,8 +77,5 @@ rand_forest_wf <- workflow() %>%
 rand_forest_model = rand_forest_wf %>%
 	fit(data = data_for_model_production) %>%
 	write_rds(here('results/single_model_expression_regression/full_scale_model.rds'), compress = 'gz')
-
-
-write_rds(model_results$.predictions[[1]], pred_output_file, compress = 'gz')
 
 toc()
