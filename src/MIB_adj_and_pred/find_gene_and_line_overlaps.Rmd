@@ -1,0 +1,135 @@
+---
+title: "Find MIB Gene and Cell Line Overlaps"
+author: "Matthew Berginski"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(readxl)
+library(janitor)
+library(stringr)
+
+knitr::opts_knit$set(root.dir = here())
+```
+
+The MIBs data from UNC probably substantially overlaps with the MIBs data from Klaeger et al, but we need to systematically try to get two lists of things matched up here: the genes and the cell lines. I'm hoping that I can do this mostly automatically for the genes, but I'm fairly certain I'll need to manually match up the cell lines to DepMap IDs.
+
+# Kyla's 2018 Paper
+
+Using one of the supplemental data files, see the data notes text file in the data folder for more info.
+
+```{r}
+MIBs_data = read_delim(here('data/MIBs/Kyla_proteinGroups_Baseline.txt')) %>%
+	clean_names()
+
+# MIBs_gene_names = MIBs_data %>%
+# 	select(Accession, Gene, Uniprot)
+# 
+klaeger_tidy = read_rds(here('results/klaeger_full_tidy.rds'))
+klaeger_genes = data.frame(klaeger_name = unique(klaeger_tidy$gene_name))
+
+klaeger_gene_labels = read_csv(here('data/KlaegerScience2017/manual_gene_labels.csv'))
+
+klaeger_genes = klaeger_genes %>%
+	left_join(klaeger_gene_labels %>% select('gene_name','class'), by=c('klaeger_name'='gene_name'))
+
+gene_matches = klaeger_genes %>%
+	left_join(MIBs_data %>% select(gene_names,protein_i_ds) %>% mutate(MIBs_gene_name = gene_names), by=c('klaeger_name' = 'gene_names'))  %>%
+	#All of the uniprot IDs were identical to the gene column hits, so I'm not going to bother using those
+	# left_join(MIBs_gene_names %>% select(Uniprot) %>% mutate(MIBs_uniprot = Uniprot), by=c('klaeger_name' = 'Uniprot')) %>%
+	# filter(class != "Non-kinase")
+	identity()
+
+missing_manual_list = tribble(
+	~klaeger_name,~protein_i_ds,
+	"Q6ZSR9","Q6ZSR9",
+	"ZAK","Q9NYL2",
+	"PSMA7","O14818;Q8TAA3",
+	"STK26","Q9P289",
+	"RAB6A","P20340;Q9NRW1;Q14964",
+	"ACSL5","Q01718;Q9ULC5",
+	"INA", "P07197;Q16352",
+	"NEK7","Q8TDX7;Q9HC98",
+	"DDX3X","O00571;O15523;Q9NQI0",
+	"AKR1C3","Q04828;P42330;P52895;P17516",
+	"CAPNS1","P04632;Q96L46",
+	"SRSF2","Q01130;Q9BRL6",
+	"CCAR2","Q8N163",
+	"CSNK2A1;CSNK2A3","P68400",
+	"CSNK2A1;CSNK2A3","Q8NEV1",
+	"PDPK1;PDPK2P","O15530;Q6A1A2",
+	"PIP4K2A;PIP4K2B","P78356",
+	"BRD4;BRD3","O60885;Q15059;P25440",
+) %>% left_join(MIBs_data %>% select(protein_i_ds,gene_names) %>% rename(MIBs_gene_name = gene_names))
+
+gene_matches = gene_matches %>%
+	filter(! klaeger_name %in% missing_manual_list$klaeger_name) %>%
+	bind_rows(missing_manual_list)
+
+stopifnot(length(unique(klaeger_genes$klaeger_name)) == length(unique(gene_matches$klaeger_name)))
+
+klaeger_missing = gene_matches %>%
+	filter(is.na(protein_i_ds))
+```
+
+```{r}
+MIBs_overlap_data = MIBs_data %>%
+	select(protein_i_ds, contains("lfq_")) %>%
+	filter(protein_i_ds %in% gene_matches$protein_i_ds) %>%
+	left_join(gene_matches %>% select(klaeger_name, protein_i_ds)) %>%
+	pivot_longer(-c(klaeger_name, protein_i_ds), names_to = "MS_cell_line", values_to = "MS_intensity")
+
+cell_line_map = tribble(
+	~MS_cell_line,~DepMap_ID,
+	"lfq_intensity_hcc1428_1","ACH-000352",
+	"lfq_intensity_hcc1428_2","ACH-000352", 
+	"lfq_intensity_hcc1954_1","ACH-000859",
+	"lfq_intensity_hcc1954_2","ACH-000859", 
+	"lfq_intensity_mda_486_2","ACH-000849",
+	"lfq_intensity_mda231_1","ACH-000768",
+	"lfq_intensity_mda361_1","ACH-000934",
+	"lfq_intensity_mda361_2","ACH-000934",  
+	"lfq_intensity_mda486_1","ACH-000849",  
+	"lfq_intensity_zr751_1","ACH-000097",
+	"lfq_intensity_zr751_2","ACH-000097",
+)
+
+MIBs_overlap_data = MIBs_overlap_data %>% 
+	left_join(cell_line_map) %>%
+	group_by(klaeger_name, DepMap_ID) %>%
+	summarise(mean_MS_int = mean(MS_intensity))
+
+dir.create(here('results/MIBs_adj'), showWarnings = F)
+
+#In order to join up the full klaeger set with each cell line, I'm going to make
+#a data structure with all the possible combos and then fill out this structure
+#with the MIBs overlap info.
+all_klaeger_depmap = crossing(
+	DepMap_ID = unique(cell_line_map$DepMap_ID),
+	klaeger_name = unique(klaeger_tidy$gene_name)
+)
+
+#There are two ways to combine the MIBs data, one is make minimal assumptions
+#and leave the genes we don't see any matches for alone.
+all_klaeger_depmap %>%
+	left_join(MIBs_overlap_data) %>%
+	write_rds(here('results/MIBs_adj','MIBs_overlap_certain.rds'))
+
+# all_klaeger_depmap %>% 
+# 	left_join(MIBs_overlap_data) %>%
+# 	mutate(mean_MS_int = ifelse(is.na(mean_MS_int),0,mean_MS_int)) %>%
+# 	write_rds(here('results/MIBs_adj','MIBs_overlap_.rds'))
+```
+
+```{r}
+# for (missing_klaeger in unique(klaeger_missing$klaeger_name)) {
+# 	if (str_detect(missing_klaeger,";")) {
+# 		next;
+# 	}
+# 	print(missing_klaeger)
+# 	system(paste0("grep ", missing_klaeger," data/MIBs/Kyla_proteinGroups_Baseline.txt | wc"))
+# }
+```

@@ -1,0 +1,208 @@
+---
+title: "MIB Data Adjustment and Prediction"
+author: "Matthew Berginski"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(tidymodels)
+library(tictoc)
+library(broom)
+library(patchwork)
+
+knitr::opts_knit$set(root.dir = here())
+```
+
+# Data Loading
+
+```{r}
+klaeger_tidy = read_rds(here('results/klaeger_full_tidy.rds'))
+
+klaeger_wide = klaeger_tidy %>%
+	mutate(act_gene_name = paste0("act_",gene_name)) %>%
+	select(-gene_name) %>%
+	pivot_wider(names_from = act_gene_name, values_from = relative_intensity)
+
+PRISM_klaeger_imputed = read_rds(here('results/PRISM_klaeger_imputed_tidy.rds'))
+
+CCLE_data = read_rds(here('results/single_model/full_CCLE_expression_set_for_ML.rds'))
+
+MIBs_overlap_data = read_rds(here('results/MIBs_adj','MIBs_overlap_certain.rds'))
+
+#This sequence combines the preprocessed MIBs data with the Klaeger data and makes two binary adjustments:
+# * Certain: only adjust the activation states where we know we don't see a given gene in the MIBS
+# * Fuzzy: adjust activation states for even the unobserved genes, assuming that in-house MIBs would have picked them up if present
+klaeger_MIBs_adj = klaeger_tidy %>%
+	filter(concentration_M != 0) %>%
+	left_join(MIBs_overlap_data, by=c('gene_name'='klaeger_name')) %>%
+	mutate(intensity_adj_certain = ifelse(!is.na(mean_MS_int) & mean_MS_int == 0, 1, relative_intensity)) %>%
+	mutate(intensity_adj_fuzzy = ifelse(mean_MS_int == 0 | is.na(mean_MS_int), 1, relative_intensity))
+
+pred_data_certain_MIBs_adj = klaeger_MIBs_adj %>%
+	select(drug, gene_name,concentration_M,DepMap_ID,intensity_adj_certain) %>%
+	mutate(act_gene_name = paste0("act_",gene_name)) %>%
+	select(-gene_name) %>%
+	pivot_wider(names_from = act_gene_name, values_from = intensity_adj_certain) %>% 
+	left_join(CCLE_data)
+
+#Also build the modified data for predictions purposes
+pred_data_no_MIBs_adj = klaeger_MIBs_adj %>%
+	select(drug,concentration_M,DepMap_ID) %>%
+	unique() %>%
+	left_join(klaeger_wide) %>%
+	left_join(CCLE_data)
+```
+
+# Model Building without any Cell Line Overlap with MIBs
+
+To assess how much the model improves with modifying the Klaeger data with MIBs information, we need to rebuild the baseline model without the cell lines covered by our baseline MIBs results. We need to do this on the off chance that the information about the lines in the model were we already have baseline MIBs might influence the quality of the model results when we feed in the modified Klaeger data. So the strategy will be:
+
+* Rebuild model without knowledge of the cell lines with baseline MIBs
+* Get the model's best guess at viability for the excluded cell lines without modifying the Klaeger vector
+** Cross check this with the full model cross validation results to make sure excluding these lines doesn't completly screw up the predictions
+* Get the model's best guess at viability with the modified Klaeger vector
+* Compare unmodified to modified Klaeger predictions along R2 and RMSE
+
+```{r}
+tic()
+if (file.exists(here('results/MIBs_adj/no_MIBs_overlap_500feat.rds'))) {
+	rand_forest_model = read_rds(here('results/MIBs_adj/no_MIBs_overlap_500feat.rds'))
+} else {
+	full_model_data = read_rds(here('results/single_model_expression_regression/full_model_data_set_500feat.rds'))
+	
+	model_data_no_MIBs_ovelap = full_model_data %>%
+		filter(! depmap_id %in% unique(MIBs_overlap_data$DepMap_ID))
+	
+	PRISM_klaeger_recipe = recipe(target_viability ~ ., model_data_no_MIBs_ovelap) %>%
+		update_role(-starts_with("act_"),
+								-starts_with("exp_"),
+								-starts_with("dep_"),
+								-starts_with("target_"), new_role = "id variable") %>%
+		prep()
+	
+	rand_forest_spec <- rand_forest() %>% 
+		set_engine("ranger", num.threads = parallel::detectCores() - 2,importance = "impurity") %>%
+		set_mode("regression")
+	
+	rand_forest_wf <- workflow() %>%
+		add_model(rand_forest_spec) %>%
+		add_recipe(PRISM_klaeger_recipe)
+	
+	rand_forest_model = rand_forest_wf %>%
+		fit(data = model_data_no_MIBs_ovelap) %>%
+		write_rds(here('results/MIBs_adj/no_MIBs_overlap_500feat.rds'), compress = 'gz')
+	
+}
+toc()
+```
+
+# Gathering Cross Validation Results for Full Model Testing
+
+This is just a double check here to make sure that excluding the lines doesn't really mess up the prediction results. To do this, we need to reload all the cross validation results and then match them with their original cell line/drug/concentration data.
+
+```{r}
+tic()
+all_CV_pred = Sys.glob(here('results/single_model_expression_regression/rand_forest/500feat_notune_pred/*')) %>%
+	map(~read_rds(.x)) %>%
+	reduce(rbind)
+
+cross_validation_results = read_rds(here('results/single_model_expression_regression/rand_forest/500feat_notune/fold0001_test.rds'))$splits[[1]]$data %>%
+	select(depmap_id, drug, klaeger_conc, imputed_viability) %>%
+	mutate(row = 1:n()) 
+
+# all_CV_pred = data.frame()
+# 
+# for (i in 1:length(model_files)) {
+# 	this_cv_data = read_rds(model_files[i])
+# 	
+# 	all_CV_pred = bind_rows(all_CV_pred,this_cv_data$.predictions[[1]]) 
+# }
+
+stopifnot(length(unique(all_CV_pred$.row)) == length(all_CV_pred$.row))
+
+
+cross_validation_results = cross_validation_results %>% 
+	left_join(all_CV_pred, by=c('row'='.row'))
+
+stopifnot(all(cross_validation_results$imputed_viability == cross_validation_results$target_viability))
+toc()
+```
+
+# Make Predictions on Unmodifed and Modified Klaeger Vectors
+
+```{r}
+all_data_model = read_rds(here('results/single_model_expression_regression/final_model_500feat.rds'))
+```
+
+```{r}
+MIBs_certain_pred = predict(rand_forest_model,
+														pred_data_certain_MIBs_adj %>%
+															mutate(depmap_id = NA, klaeger_conc = NA, imputed_viability = NA))
+
+MIBS_preds = pred_data_certain_MIBs_adj %>%
+	select(drug,concentration_M,DepMap_ID) %>%
+	mutate(certain_adj_pred = MIBs_certain_pred$.pred) %>%
+	left_join(PRISM_klaeger_imputed, by=c('DepMap_ID' = 'depmap_id', 'concentration_M'='klaeger_conc', 'drug'='drug')) %>%
+	filter(!is.na(imputed_viability))
+
+no_adj = predict(rand_forest_model,
+								 pred_data_no_MIBs_adj %>%
+								 	mutate(depmap_id = NA, klaeger_conc = NA, imputed_viability = NA))
+
+no_adj_preds = pred_data_no_MIBs_adj %>%
+	select(drug,concentration_M,DepMap_ID) %>%
+	mutate(no_adj_pred = no_adj$.pred)
+# left_join(PRISM_klaeger_imputed, by=c('DepMap_ID' = 'depmap_id', 'concentration_M'='klaeger_conc', 'drug'='drug')) %>%
+# filter(!is.na(imputed_viability))
+
+MIBS_preds = MIBS_preds %>%
+	left_join(no_adj_preds) %>%
+	left_join(cross_validation_results %>% 
+							select(depmap_id,drug,klaeger_conc,.pred) %>%
+							rename(CV_pred = .pred),
+						by=c('drug'='drug','DepMap_ID'='depmap_id','concentration_M'='klaeger_conc'))
+
+```
+
+```{r}
+no_adj_r2 = glance(summary(lm(imputed_viability ~ no_adj_pred, data=MIBS_preds)))$r.squared
+certain_adj_r2 = glance(summary(lm(imputed_viability ~ certain_adj_pred, data=MIBS_preds)))$r.squared
+cv_r2 = glance(summary(lm(imputed_viability ~ CV_pred, data=MIBS_preds)))$r.squared
+
+no_adj_rmse = Metrics::rmse(MIBS_preds$imputed_viability, MIBS_preds$no_adj_pred)
+certain_adj_rmse = Metrics::rmse(MIBS_preds$imputed_viability, MIBS_preds$certain_adj_pred)
+cv_rmse = Metrics::rmse(MIBS_preds$imputed_viability, MIBS_preds$CV_pred)
+
+cross_val = MIBS_preds %>% ggplot(aes(x=imputed_viability,y=CV_pred)) +
+	geom_point(size=0,alpha=0.25) +
+	geom_abline(slope = 1, intercept = 0,linetype=2) +
+	geom_smooth(method = 'lm') +
+	labs(x="Actual Imputed Viability",y="Cross Validation Viability") +
+	ggtitle(paste0("R2: ", signif(cv_r2,3), "  RMSE: ", signif(cv_rmse,3))) +
+	# xlim(c(0,2)) + ylim(c(0,2)) +
+	BerginskiRMisc::theme_berginski()
+
+MIBs_adj = MIBS_preds %>% ggplot(aes(x=imputed_viability,y=certain_adj_pred)) +
+	geom_point(size=0,alpha=0.25) +
+	geom_abline(slope = 1, intercept = 0,linetype=2) +
+	geom_smooth(method = 'lm') +
+	labs(x="Actual Imputed Viability",y="MIBs Adjusted Viability Prediction") +
+	ggtitle(paste0("R2: ", signif(certain_adj_r2,3), "  RMSE: ", signif(certain_adj_rmse,3))) +
+	# xlim(c(0,2)) + ylim(c(0,2)) +
+	BerginskiRMisc::theme_berginski()
+
+no_adj_plot = MIBS_preds %>% ggplot(aes(x=imputed_viability,y=no_adj_pred)) +
+	geom_point(size=0,alpha=0.25) +
+	geom_abline(slope = 1, intercept = 0,linetype=2) +
+	geom_smooth(method = 'lm') +
+	labs(x="Actual Imputed Viability",y="Unadjusted Viability Prediction") +
+	ggtitle(paste0("R2: ", signif(no_adj_r2,3), "  RMSE: ", signif(no_adj_rmse,3))) +
+	# xlim(c(0,2)) + ylim(c(0,2)) +
+	BerginskiRMisc::theme_berginski()
+
+ggsave(here('figures/single_model_expression/MIBS_adj_vs_CV.png'), cross_val + MIBs_adj + no_adj_plot, width=8*(3/2),height=4)
+
+```
