@@ -41,7 +41,6 @@ broad_id_klaeger_conc = broad_id_klaeger_conc %>%
 
 response_curve_parameters %>%
 	left_join(broad_id_klaeger_conc) %>%
-	# filter(lower_limit <= 1.2) %>%
 	#These curves seem to be originally fit in uM concentrations, so we'll convert
 	#the M concentration values to uM
 	mutate(imputed_viability = lower_limit + (upper_limit - lower_limit)/(1 + exp(slope * (log(klaeger_conc*10^6) - log(ec50))))) %>%
