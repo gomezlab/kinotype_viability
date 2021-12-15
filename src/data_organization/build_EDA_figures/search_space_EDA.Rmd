@@ -134,38 +134,3 @@ system(paste("convert -bordercolor blue -border 2",
 						 here('figures/single_model_expression/untested_feature_space_invert.png'),
 						 here('figures/single_model_expression/untested_feature_space_invert.png')))
 ```
-# Failed Experiments
-
-```{r}
-ggplot(cell_line_compound_counts, aes(y=num_drugs,x=depmap_id_num)) + 
-	geom_col() +
-	ylim(c(0,229)) +
-	xlim(c(0,1379)) +
-	geom_vline(aes(xintercept = 0)) +
-	geom_vline(aes(xintercept = 1379)) +
-	geom_hline(aes(yintercept = 0)) +
-	geom_hline(aes(yintercept = 229))
-# theme_void()
-```
-
-```{r}
-all_combos_wide = all_combos %>%
-	pivot_wider(drug, names_from = depmap_id, values_from = tested) %>%
-	select(drug,any_of(cell_line_compound_counts$depmap_id),everything()) %>%
-	left_join(drug_line_compound_counts %>% select(drug,drug_id_num)) %>%
-	arrange(drug_id_num) %>%
-	select(-drug_id_num, -drug)
-
-
-png(here('test.png'))
-image(x=1:dim(all_combos_wide)[1], 
-			y = 1:dim(all_combos_wide)[2], 
-			z=as.matrix(all_combos_wide),
-			col = c("black", "white"))
-dev.off()
-```
-
-```{r}
-all_combos %>%
-	heatmap(drug,depmap_id, tested, palette_value = c("black","black","white"))
-```
