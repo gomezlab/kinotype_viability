@@ -1,0 +1,170 @@
+---
+title: "Match Activation and Expression Data"
+author: "Matthew Berginski"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+
+knitr::opts_knit$set(root.dir = here())
+```
+
+```{r}
+klaeger_wide = read_rds(here('results/klaeger_full_tidy.rds')) %>%
+	mutate(act_gene_name = paste0("act_",gene_name)) %>%
+	select(-gene_name) %>%
+	pivot_wider(names_from = act_gene_name, values_from = relative_intensity)
+
+CCLE_data = read_rds(here('results/single_model/full_CCLE_expression_set_for_ML.rds'))
+```
+
+```{r}
+match_set = data.frame(temp = names(klaeger_wide %>% select(-drug,-concentration_M))) %>% 
+	separate(temp, into = c(NA,"act_gene"), sep = "_")
+
+exp_names = data.frame(temp = names(CCLE_data)) %>% 
+	separate(temp, into = c(NA,"exp_gene"), sep = "_") %>%
+	mutate(perfect_match = 1)
+
+match_set = match_set %>%
+	left_join(exp_names, by = c('act_gene'='exp_gene'))
+```
+
+```{r}
+manual_matches = tribble(
+	~act_gene,~exp_gene_manual,~manual,
+	"CSNK2A1;CSNK2A3","CSNK2A1",1,
+	"CSNK2A1;CSNK2A3","CSNK2A3",1,
+	"ICK","CILK1",1,
+	"ZAK","MAP3K20",1,
+	"ADCK3","COQ8A",1,
+	"MOB1A;MOB1B","MOB1A",1,
+	"MOB1A;MOB1B","MOB1B",1,
+	"PDPK1;PDPK2P","PDPK1",1,
+	"ADRBK1","GRK2",1,
+	"BRD4;BRD3","BRD4",1,
+	"BRD4;BRD3","BRD3",1,
+	"FAM58A;FAM58BP","CCNQ",1,
+	"PRKX;PRKY","PRKX",1,
+	"PRKX;PRKY","PRKY",1,
+	"U2AF1;U2AF1L4","U2AF1",1,
+	"U2AF1;U2AF1L4","U2AF1L4",1,
+	"PIP4K2A;PIP4K2B","PIP4K2A",1,
+	"PIP4K2A;PIP4K2B","PIP4K2B",1,
+	"SEPT9","SEPTIN9",1,
+	"SKIV2L2","MTREX",1,
+	"GARS","GARS1",1,
+	"YARS","YARS1",1,
+	"KIAA0195","TMEM94",1,
+	"SRPR","SRPRA",1,
+	"CARS","CARS1",1,
+	"HIST2H2BE;HIST1H2BB;HIST1H2BO;HIST1H2BJ;HIST3H2BB;HIST1H2BA","H2BC21",1,
+	"HIST2H2BE;HIST1H2BB;HIST1H2BO;HIST1H2BJ;HIST3H2BB;HIST1H2BA","H2BC3",1,
+	"HIST2H2BE;HIST1H2BB;HIST1H2BO;HIST1H2BJ;HIST3H2BB;HIST1H2BA","H2BC17",1,
+	"HIST2H2BE;HIST1H2BB;HIST1H2BO;HIST1H2BJ;HIST3H2BB;HIST1H2BA","H2BC11",1,
+	"HIST2H2BE;HIST1H2BB;HIST1H2BO;HIST1H2BJ;HIST3H2BB;HIST1H2BA","H2BU1",1,
+	"HIST2H2BE;HIST1H2BB;HIST1H2BO;HIST1H2BJ;HIST3H2BB;HIST1H2BA","H2BC1",1,
+	"FAM92B","CIBAR2",1,
+	"DDT;DDTL","DDT",1,
+	"DDT;DDTL","DDTL",1,
+	"PRKCE;PRKCH","PRKCE",1,
+	"PRKCE;PRKCH","PRKCH",1,
+	"PCBP2;PCBP3","PCBP2",1,
+	"PCBP2;PCBP3","PCBP3",1,
+	"EIF2S3;EIF2S3L","EIF2S3",1,
+	"YTHDF3;YTHDF1","YTHDF3",1,
+	"YTHDF3;YTHDF1","YTHDF1",1,
+)
+
+match_set = match_set %>%
+	left_join(manual_matches, by='act_gene')
+
+# match_set %>% filter(is.na(perfect_match), is.na(manual)) %>% View()
+```
+
+```{r}
+match_set = match_set %>%
+	mutate(exp_gene = case_when(
+		perfect_match == 1 ~ act_gene,
+		!is.na(exp_gene_manual) ~ exp_gene_manual
+	)) %>%
+	mutate(exp_gene_match = paste0("exp_",exp_gene)) %>%
+	mutate(act_gene_match = paste0("act_",act_gene))
+```
+
+```{r}
+dir.create(here('results/exp_adj'), showWarnings = F)
+
+CCLE_data_long_match = CCLE_data %>%
+	select(DepMap_ID,all_of(match_set %>% filter(!is.na(exp_gene)) %>% pull(exp_gene_match))) %>%
+	pivot_longer(-DepMap_ID, names_to = "exp_gene_match",values_to = "log2_TPM") %>%
+	left_join(match_set %>% select(act_gene,exp_gene_match)) %>%
+	identity()
+
+#check to make sure all the expression genes selected are matched
+stopifnot(sum(is.na(CCLE_data_long_match$act_gene)) == 0)
+
+CCLE_data_act_summary = CCLE_data_long_match %>%
+	group_by(DepMap_ID,act_gene) %>%
+	summarise(log2_TPM = sum(log2_TPM)) %>%
+	mutate(zero_exp = log2_TPM == 0) %>%
+	mutate(below_05_global = log2_TPM <= quantile(log2_TPM,0.05)) %>%
+	mutate(below_10_global = log2_TPM <= quantile(log2_TPM,0.10)) %>%
+	mutate(below_15_global = log2_TPM <= quantile(log2_TPM,0.15)) %>%
+	mutate(below_20_global = log2_TPM <= quantile(log2_TPM,0.20))
+
+CCLE_data_per_gene_quantile = CCLE_data_act_summary %>%
+	# filter(act_gene == "LATS1" | act_gene == "CSNK1G1") %>%
+	group_by(act_gene) %>%
+	summarise(below_05_per_gene_thresh = quantile(log2_TPM,0.05),
+						below_10_per_gene_thresh = quantile(log2_TPM,0.10),
+						below_15_per_gene_thresh = quantile(log2_TPM,0.15),
+						below_20_per_gene_thresh = quantile(log2_TPM,0.20)) %>%
+	ungroup()
+
+CCLE_data_act_summary = CCLE_data_act_summary %>%
+	left_join(CCLE_data_per_gene_quantile) %>%
+	mutate(below_05_per = log2_TPM <= below_05_per_gene_thresh) %>%
+	mutate(below_10_per = log2_TPM <= below_10_per_gene_thresh) %>%
+	mutate(below_15_per = log2_TPM <= below_15_per_gene_thresh) %>%
+	mutate(below_20_per = log2_TPM <= below_20_per_gene_thresh) %>%
+	arrange(log2_TPM) %>%
+	write_rds(here('results/exp_adj/gene_exp_and_act.rds'), compress = 'gz')
+```
+
+```{r}
+PRISM_klaeger_imputed = read_rds(here('results/PRISM_klaeger_imputed_tidy.rds'))
+PRISM_lines = unique(PRISM_klaeger_imputed$depmap_id)
+rm(PRISM_klaeger_imputed); gc();
+
+read_rds(here('results/klaeger_full_tidy.rds')) %>%
+	left_join(CCLE_data_act_summary %>% 
+							filter(DepMap_ID %in% PRISM_lines) %>%
+							select(-log2_TPM), by=c('gene_name'='act_gene')) %>%
+	
+	mutate(relative_intensity = ifelse(zero_exp, 1, relative_intensity)) %>%
+	
+	mutate(act_gene_name = paste0("act_",gene_name)) %>%
+	select(-gene_name, -contains("below_"), -zero_exp) %>%
+	pivot_wider(names_from = act_gene_name, values_from = relative_intensity) %>%
+	write_rds(here('results/exp_adj/klaeger_wide_zero_adj.rds'), compress = 'gz')
+
+gc()
+
+read_rds(here('results/klaeger_full_tidy.rds')) %>%
+	left_join(CCLE_data_act_summary %>%
+							ungroup() %>%
+							filter(DepMap_ID %in% PRISM_lines) %>%
+							select(act_gene,below_10_per,DepMap_ID), by=c('gene_name'='act_gene')) %>%
+
+	mutate(relative_intensity = ifelse(below_10_per, 1, relative_intensity)) %>%
+	mutate(act_gene_name = paste0("act_",gene_name)) %>%
+	select(-gene_name, -below_10_per) %>%
+	pivot_wider(names_from = act_gene_name, values_from = relative_intensity) %>%
+	write_rds(here('results/exp_adj/klaeger_wide_below_10_per_gene.rds'), compress = 'gz')
+
+gc()
+```
