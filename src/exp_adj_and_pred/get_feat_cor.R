@@ -29,7 +29,7 @@ source(here('src/exp_adj_and_pred/shared_feature_selection_functions.r'))
 
 PRISM_klaeger_imputed = read_rds(here('results/PRISM_klaeger_imputed_tidy.rds'))
 
-klaeger_wide = read_rds(here('results/exp_adj/klaeger_wide_below_10_per_gene.rds'))
+klaeger_wide = read_rds(here('results/exp_adj/klaeger_wide_zero_adj.rds'))
 
 CCLE_data = read_rds(here('results/single_model/full_CCLE_expression_set_for_ML.rds'))
 
