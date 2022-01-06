@@ -29,7 +29,10 @@ source(here('src/exp_adj_and_pred/shared_feature_selection_functions.r'))
 
 PRISM_klaeger_imputed = read_rds(here('results/PRISM_klaeger_imputed_tidy.rds'))
 
-klaeger_wide = read_rds(here('results/exp_adj/klaeger_wide_below_20_per_gene.rds'))
+klaeger_wide = read_rds(here('results/exp_adj/klaeger_wide_zero_adj.rds'))
+# klaeger_wide = read_rds(here('results/exp_adj/klaeger_wide_below_10_per_adj.rds'))
+# klaeger_wide = read_rds(here('results/exp_adj/klaeger_wide_below_20_per_adj.rds'))
+# klaeger_wide = read_rds(here('results/exp_adj/klaeger_wide_below_50_per_adj.rds'))
 
 CCLE_data = read_rds(here('results/single_model/full_CCLE_expression_set_for_ML.rds'))
 
@@ -53,17 +56,6 @@ if (file.exists(here('results/exp_adj/CV_split_row_nums.rds'))) {
 }
 
 stopifnot(args$CV_fold_ID <= max(fold_ids))
-
-###############################################################################
-# Output Full Data Set for Final Model Building
-###############################################################################
-
-# if (! file.exists(here('results/exp_adj/full_model_data_set_500feat.rds'))) {
-# 	all_cor = find_feature_correlations()
-# 	write_rds(all_cor,here('results/exp_adj/full_data_cor.rds'))
-# 	build_regression_viability_set(all_cor,500) %>%
-# 		write_rds(here('results/exp_adj/full_model_data_set_500feat.rds'), compress='gz')
-# }
 
 ###############################################################################
 # Calc Feature Cor and Output
