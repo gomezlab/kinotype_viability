@@ -19,9 +19,9 @@ parser$add_argument('--CV_fold_ID', default = 1, type="integer")
 
 args = parser$parse_args()
 
-dir.create(here('results/exp_adj'), recursive = T)
+dir.create(here('results/exp_adj/zero_adj'), recursive = T)
 
-source(here('src/exp_adj_and_pred/shared_feature_selection_functions.r'))
+source(here('src/alternative_data_sets/exp_adj/shared_feature_selection_functions.r'))
 
 ###############################################################################
 # Load Data
@@ -63,9 +63,9 @@ stopifnot(args$CV_fold_ID <= max(fold_ids))
 
 feature_cor = find_feature_correlations(row_indexes = which(fold_ids != args$CV_fold_ID))
 
-dir.create(here('results/exp_adj/CV_feature_cors/'), recursive = T, showWarnings = F)
+dir.create(here('results/exp_adj/zero_adj/CV_feature_cors/'), recursive = T, showWarnings = F)
 
 write_rds(feature_cor,
-					here('results/exp_adj/CV_feature_cors/',sprintf('%04d.rds',args$CV_fold_ID)),
+					here('results/exp_adj/zero_adj/CV_feature_cors/',sprintf('%04d.rds',args$CV_fold_ID)),
 					compress = 'gz')
 toc()

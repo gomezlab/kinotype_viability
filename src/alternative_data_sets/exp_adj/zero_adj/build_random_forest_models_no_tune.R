@@ -16,27 +16,27 @@ parser$add_argument('--CV_fold_ID', default = 1, type="integer")
 args = parser$parse_args()
 print(sprintf('Fold: %02d',args$CV_fold_ID))
 
-dir.create(here('results/exp_adj/', 
+dir.create(here('results/exp_adj/zero_adj', 
 								sprintf('rand_forest/%dfeat_notune/',args$feature_num)), 
 					 showWarnings = F, recursive = T)
 
-full_output_file = here('results/exp_adj/', 
+full_output_file = here('results/exp_adj/zero_adj', 
 									 sprintf('rand_forest/%dfeat_notune/',args$feature_num),
 									 sprintf('fold%04d_test.rds',args$CV_fold_ID))
 
-dir.create(here('results/exp_adj/', 
+dir.create(here('results/exp_adj/zero_adj', 
 								sprintf('rand_forest/%dfeat_notune_pred/',args$feature_num)), showWarnings = F)
 
-pred_output_file = here('results/exp_adj/', 
+pred_output_file = here('results/exp_adj/zero_adj', 
 									 sprintf('rand_forest/%dfeat_notune_pred/',args$feature_num),
 									 sprintf('fold%04d_test.rds',args$CV_fold_ID))
 
-feature_cor = read_rds(here('results/exp_adj/CV_feature_cors/',
+feature_cor = read_rds(here('results/exp_adj/zero_adj/CV_feature_cors/',
 														sprintf('%04d.rds',args$CV_fold_ID)))
 
 fold_ids = read_rds(here('results/exp_adj/CV_split_row_nums.rds'))
 
-source(here('src/exp_adj_and_pred/shared_feature_selection_functions.r'))
+source(here('src/alternative_data_sets/exp_adj/shared_feature_selection_functions.r'))
 
 ###############################################################################
 # Load Data
