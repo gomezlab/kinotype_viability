@@ -122,7 +122,8 @@ CCLE_data_per_gene_quantile = CCLE_data_act_summary %>%
 	summarise(below_05_per_gene_thresh = quantile(log2_TPM,0.05),
 						below_10_per_gene_thresh = quantile(log2_TPM,0.10),
 						below_15_per_gene_thresh = quantile(log2_TPM,0.15),
-						below_20_per_gene_thresh = quantile(log2_TPM,0.20)) %>%
+						below_20_per_gene_thresh = quantile(log2_TPM,0.20),
+						below_50_per_gene_thresh = quantile(log2_TPM,0.50)) %>%
 	ungroup()
 
 CCLE_data_act_summary = CCLE_data_act_summary %>%
@@ -131,40 +132,127 @@ CCLE_data_act_summary = CCLE_data_act_summary %>%
 	mutate(below_10_per = log2_TPM <= below_10_per_gene_thresh) %>%
 	mutate(below_15_per = log2_TPM <= below_15_per_gene_thresh) %>%
 	mutate(below_20_per = log2_TPM <= below_20_per_gene_thresh) %>%
+	mutate(below_50_per = log2_TPM <= below_50_per_gene_thresh) %>%
 	arrange(log2_TPM) %>%
 	write_rds(here('results/exp_adj/gene_exp_and_act.rds'), compress = 'gz')
 ```
+# Apply Adjustments
 
 ```{r}
 PRISM_klaeger_imputed = read_rds(here('results/PRISM_klaeger_imputed_tidy.rds'))
 PRISM_lines = unique(PRISM_klaeger_imputed$depmap_id)
 rm(PRISM_klaeger_imputed); gc();
 
-read_rds(here('results/klaeger_full_tidy.rds')) %>%
-	left_join(CCLE_data_act_summary %>% 
+klaeger_tidy = read_rds(here('results/klaeger_full_tidy.rds')) %>%
+	filter(gene_name %in% (match_set %>% filter(!is.na(exp_gene)) %>% pull(act_gene)))
+klaeger_null_percent = mean(klaeger_tidy$relative_intensity == 1)
+```
+
+## Below Zero Adjustment
+
+```{r}
+temp = klaeger_tidy %>% 
+	left_join(CCLE_data_act_summary %>%
 							filter(DepMap_ID %in% PRISM_lines) %>%
-							select(-log2_TPM), by=c('gene_name'='act_gene')) %>%
-	
-	mutate(relative_intensity = ifelse(zero_exp, 1, relative_intensity)) %>%
-	
+							select(act_gene,DepMap_ID,zero_exp), 
+						by=c('gene_name'='act_gene')) %>%
+	mutate(relative_intensity_mod = case_when(
+		is.na(zero_exp) ~ relative_intensity,
+		zero_exp ~ 1,
+		T ~ relative_intensity
+	))
+
+print(mean(temp$relative_intensity == temp$relative_intensity_mod))
+print((1 - mean(temp$relative_intensity == temp$relative_intensity_mod))/(1 - klaeger_null_percent))
+
+temp %>%
+	mutate(relative_intensity = relative_intensity_mod) %>%
+	select(-relative_intensity_mod) %>%
 	mutate(act_gene_name = paste0("act_",gene_name)) %>%
-	select(-gene_name, -contains("below_"), -zero_exp) %>%
+	select(-gene_name, -zero_exp) %>%
 	pivot_wider(names_from = act_gene_name, values_from = relative_intensity) %>%
 	write_rds(here('results/exp_adj/klaeger_wide_zero_adj.rds'), compress = 'gz')
 
-gc()
+rm(temp); gc()
+```
 
-read_rds(here('results/klaeger_full_tidy.rds')) %>%
+## Below 10 Adjustment
+
+```{r}
+temp = klaeger_tidy %>%
 	left_join(CCLE_data_act_summary %>%
-							ungroup() %>%
 							filter(DepMap_ID %in% PRISM_lines) %>%
-							select(act_gene,below_10_per,DepMap_ID), by=c('gene_name'='act_gene')) %>%
+							select(act_gene,DepMap_ID,below_10_per), by=c('gene_name'='act_gene')) %>%
+	mutate(relative_intensity_mod = case_when(
+		is.na(below_10_per) ~ relative_intensity,
+		below_10_per ~ 1,
+		T ~ relative_intensity
+	))
 
-	mutate(relative_intensity = ifelse(below_10_per, 1, relative_intensity)) %>%
+print(mean(temp$relative_intensity == temp$relative_intensity_mod))
+print((1 - mean(temp$relative_intensity == temp$relative_intensity_mod))/(1 - klaeger_null_percent))
+
+temp %>%
+	mutate(relative_intensity = relative_intensity_mod) %>%
+	select(-relative_intensity_mod) %>%
 	mutate(act_gene_name = paste0("act_",gene_name)) %>%
 	select(-gene_name, -below_10_per) %>%
 	pivot_wider(names_from = act_gene_name, values_from = relative_intensity) %>%
-	write_rds(here('results/exp_adj/klaeger_wide_below_10_per_gene.rds'), compress = 'gz')
+	write_rds(here('results/exp_adj/klaeger_wide_below_10_per_adj.rds'), compress = 'gz')
 
-gc()
+rm(temp); gc()
+```
+
+## Below 20 Adjustment
+
+```{r}
+temp = klaeger_tidy %>%
+	left_join(CCLE_data_act_summary %>%
+							filter(DepMap_ID %in% PRISM_lines) %>%
+							select(act_gene,DepMap_ID,below_20_per), by=c('gene_name'='act_gene')) %>%
+	mutate(relative_intensity_mod = case_when(
+		is.na(below_20_per) ~ relative_intensity,
+		below_20_per ~ 1,
+		T ~ relative_intensity
+	))
+
+print(mean(temp$relative_intensity == temp$relative_intensity_mod))
+print((1 - mean(temp$relative_intensity == temp$relative_intensity_mod))/(1 - klaeger_null_percent))
+
+temp %>%
+	mutate(relative_intensity = relative_intensity_mod) %>%
+	select(-relative_intensity_mod) %>%
+	mutate(act_gene_name = paste0("act_",gene_name)) %>%
+	select(-gene_name, -below_20_per) %>%
+	pivot_wider(names_from = act_gene_name, values_from = relative_intensity) %>%
+	write_rds(here('results/exp_adj/klaeger_wide_below_20_per_adj.rds'), compress = 'gz')
+
+rm(temp); gc()
+```
+
+## Below 50 Adjustment
+
+```{r}
+temp = klaeger_tidy %>%
+	left_join(CCLE_data_act_summary %>%
+							filter(DepMap_ID %in% PRISM_lines) %>%
+							select(act_gene,DepMap_ID,below_50_per), by=c('gene_name'='act_gene')) %>%
+	mutate(relative_intensity_mod = case_when(
+		is.na(below_50_per) ~ relative_intensity,
+		below_50_per ~ 1,
+		T ~ relative_intensity
+	))
+
+print(mean(temp$relative_intensity == temp$relative_intensity_mod))
+print((1 - mean(temp$relative_intensity == temp$relative_intensity_mod))/(1 - klaeger_null_percent))
+
+temp %>%
+	mutate(relative_intensity = relative_intensity_mod) %>%
+	select(-relative_intensity_mod) %>%
+	mutate(act_gene_name = paste0("act_",gene_name)) %>%
+	select(-gene_name, -below_50_per) %>%
+	pivot_wider(names_from = act_gene_name, values_from = relative_intensity) %>%
+	write_rds(here('results/exp_adj/klaeger_wide_below_50_per_adj.rds'), compress = 'gz')
+
+rm(temp); gc()
 ```
