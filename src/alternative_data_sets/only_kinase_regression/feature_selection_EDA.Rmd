@@ -19,7 +19,7 @@ knitr::opts_knit$set(root.dir = here())
 # Load Data
 
 ```{r}
-dir.create(here('results/single_model_expression_regression'), recursive = T)
+dir.create(here('results/single_model_exp_only_kin_regression'), recursive = T)
 
 klaeger_wide = read_rds(here('results/klaeger_full_tidy.rds')) %>%
 	mutate(act_gene_name = paste0("act_",gene_name)) %>%
@@ -34,7 +34,7 @@ PRISM_klaeger_imputed = PRISM_klaeger_imputed %>%
 	filter(depmap_id %in% CCLE_data$DepMap_ID) %>%
 	ungroup()
 
-source(here('src/build_ML_models_expression_regression/shared_feature_selection_functions.r'))
+source(here('src/alternative_data_sets/only_kinase_regression/shared_feature_selection_functions.r'))
 ```
 
 # Assess Full Data Correlations
@@ -283,7 +283,7 @@ ggsave(here('figures/feature_selection_expression/activation_cor_vs_sd.png'))
 # Build Cross Validation Data Figures
 
 ```{r}
-feature_cor_sets = read_rds(here('results/single_model_expression_regression/CV_set_correlations.rds'))
+feature_cor_sets = read_rds(here('results/single_model_exp_only_kin_regression/CV_set_correlations.rds'))
 
 all_cor_cv_sets = data.frame()
 for (i in 1:10) {

@@ -21,7 +21,7 @@ args = parser$parse_args()
 
 dir.create(here('results/single_model_exp_only_kin_regression'), recursive = T)
 
-source(here('src/build_ML_models_exp_only_kin_regression/shared_feature_selection_functions.r'))
+source(here('src/alternative_data_sets/only_kinase_regression/shared_feature_selection_functions.r'))
 
 ###############################################################################
 # Load Data

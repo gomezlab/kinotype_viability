@@ -36,7 +36,7 @@ feature_cor = read_rds(here('results/single_model_exp_only_kin_regression/CV_fea
 
 fold_ids = read_rds(here('results/single_model_exp_only_kin_regression/CV_split_row_nums.rds'))
 
-source(here('src/build_ML_models_exp_only_kin_regression/shared_feature_selection_functions.r'))
+source(here('src/alternative_data_sets/only_kinase_regression/shared_feature_selection_functions.r'))
 
 ###############################################################################
 # Load Data
