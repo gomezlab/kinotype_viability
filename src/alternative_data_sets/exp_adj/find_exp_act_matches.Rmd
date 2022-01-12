@@ -111,6 +111,8 @@ CCLE_data_act_summary = CCLE_data_long_match %>%
 	group_by(DepMap_ID,act_gene) %>%
 	summarise(log2_TPM = sum(log2_TPM)) %>%
 	mutate(zero_exp = log2_TPM == 0) %>%
+	#all TPM vals are pseudocount 1 log2-ed
+	mutate(below_1TPM_global = log2_TPM <= log2(2)) %>%
 	mutate(below_05_global = log2_TPM <= quantile(log2_TPM,0.05)) %>%
 	mutate(below_10_global = log2_TPM <= quantile(log2_TPM,0.10)) %>%
 	mutate(below_15_global = log2_TPM <= quantile(log2_TPM,0.15)) %>%
@@ -126,7 +128,34 @@ CCLE_data_per_gene_quantile = CCLE_data_act_summary %>%
 						below_50_per_gene_thresh = quantile(log2_TPM,0.50)) %>%
 	ungroup()
 
+calc_exp_adj_factor <- function(exp_data) {
+	zero_exp = exp_data %>% 
+		filter(log2_TPM == 0) %>%
+		mutate(adj_factor_perc = 0,
+					 adj_factor_scale = 0)
+	
+	non_zero_exp = exp_data %>%
+		filter(log2_TPM != 0) %>%
+		mutate(adj_factor_perc = percent_rank(log2_TPM)) %>%
+		mutate(adj_factor_scale = log2_TPM/max(log2_TPM))
+	
+	return(
+		bind_rows(zero_exp, non_zero_exp) %>%
+			select(-log2_TPM)
+	)
+}
+
+CCLE_data_per_gene_adj = CCLE_data_act_summary %>%
+	select(DepMap_ID,act_gene,log2_TPM) %>%
+	group_by(act_gene) %>%
+	nest() %>%
+	mutate(gene_adj = map(data,calc_exp_adj_factor)) %>%
+	unnest(gene_adj) %>%
+	select(-data) %>%
+	ungroup()
+
 CCLE_data_act_summary = CCLE_data_act_summary %>%
+	left_join(CCLE_data_per_gene_adj) %>%
 	left_join(CCLE_data_per_gene_quantile) %>%
 	mutate(below_05_per = log2_TPM <= below_05_per_gene_thresh) %>%
 	mutate(below_10_per = log2_TPM <= below_10_per_gene_thresh) %>%
@@ -175,6 +204,34 @@ temp %>%
 
 rm(temp); gc()
 ```
+
+## Below 1 TPM
+
+```{r}
+temp = klaeger_tidy %>%
+	left_join(CCLE_data_act_summary %>%
+							filter(DepMap_ID %in% PRISM_lines) %>%
+							select(act_gene,DepMap_ID,below_1TPM_global), by=c('gene_name'='act_gene')) %>%
+	mutate(relative_intensity_mod = case_when(
+		is.na(below_1TPM_global) ~ relative_intensity,
+		below_1TPM_global ~ 1,
+		T ~ relative_intensity
+	))
+
+print(mean(temp$relative_intensity == temp$relative_intensity_mod))
+print((1 - mean(temp$relative_intensity == temp$relative_intensity_mod))/(1 - klaeger_null_percent))
+
+temp %>%
+	mutate(relative_intensity = relative_intensity_mod) %>%
+	select(-relative_intensity_mod) %>%
+	mutate(act_gene_name = paste0("act_",gene_name)) %>%
+	select(-gene_name, -below_1TPM_global) %>%
+	pivot_wider(names_from = act_gene_name, values_from = relative_intensity) %>%
+	write_rds(here('results/exp_adj/klaeger_wide_below_1TPM_adj.rds'), compress = 'gz')
+
+rm(temp); gc()
+```
+
 
 ## Below 10 Adjustment
 
@@ -253,6 +310,35 @@ temp %>%
 	select(-gene_name, -below_50_per) %>%
 	pivot_wider(names_from = act_gene_name, values_from = relative_intensity) %>%
 	write_rds(here('results/exp_adj/klaeger_wide_below_50_per_adj.rds'), compress = 'gz')
+
+rm(temp); gc()
+```
+
+## Exp Scaled Activation
+
+```{r}
+temp = klaeger_tidy %>% 
+	left_join(CCLE_data_act_summary %>%
+							filter(DepMap_ID %in% PRISM_lines) %>%
+							select(act_gene,DepMap_ID,adj_factor_scale), 
+						by=c('gene_name'='act_gene')) %>%
+	mutate(relative_intensity_mod = case_when(
+		adj_factor_scale == 0 ~ 1,
+		relative_intensity == 1 ~ 1,
+		relative_intensity >= 1 ~ 1 + (relative_intensity - 1)*adj_factor_scale,
+		relative_intensity < 1 ~ 1 - (1 - relative_intensity)*adj_factor_scale
+	))
+
+print(mean(temp$relative_intensity == temp$relative_intensity_mod))
+print((1 - mean(temp$relative_intensity == temp$relative_intensity_mod))/(1 - klaeger_null_percent))
+
+temp %>%
+	mutate(relative_intensity = relative_intensity_mod) %>%
+	select(-relative_intensity_mod) %>%
+	mutate(act_gene_name = paste0("act_",gene_name)) %>%
+	select(-gene_name, -adj_factor_scale) %>%
+	pivot_wider(names_from = act_gene_name, values_from = relative_intensity) %>%
+	write_rds(here('results/exp_adj/klaeger_wide_exp_scale.rds'), compress = 'gz')
 
 rm(temp); gc()
 ```
