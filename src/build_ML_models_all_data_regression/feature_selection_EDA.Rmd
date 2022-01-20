@@ -12,6 +12,7 @@ library(tidymodels)
 library(tictoc)
 library(doParallel)
 library(patchwork)
+library(ggupset)
 
 knitr::opts_knit$set(root.dir = here())
 ```
@@ -241,7 +242,7 @@ ggsave(here('figures/feature_selection_all/activation_cor_vs_sd.png'))
 ```{r}
 feature_cor_sets = list()
 i = 1
-for (feat_cor_set_file in Sys.glob(here('results/single_model_expression_regression/CV_feature_cors/*'))) {
+for (feat_cor_set_file in Sys.glob(here('results/single_model_all_data_regression/CV_feature_cors/*'))) {
 	feature_cor_sets[[i]] = read_rds(feat_cor_set_file)
 	i = i + 1
 }
@@ -270,7 +271,7 @@ for (i in 1:10) {
 tic()
 
 frac_features_in_all_folds = data.frame()
-for (this_num_feat in c(10:6000)) {
+for (this_num_feat in c(10:2000)) {
 	this_frac_in_all = all_cor_cv_sets %>% 
 		filter(rank <= this_num_feat) %>% 
 		count(feature) %>% 
@@ -303,6 +304,45 @@ ggplot(frac_features_in_all_folds, aes(x=num_feat, y=num_times_norm,color=as.fac
 ggsave(here('figures/feature_selection_all/feat_select_in_CV_sets.png'),height=3.5,width=5)
 BerginskiRMisc::trimImage(here('figures/feature_selection_all/feat_select_in_CV_sets.png'))
 ```
+
+# Cell Line Data Overlap
+
+```{r}
+duplicated_prot = proteomics_data %>% 
+	filter(DepMap_ID == "ACH-000212" | DepMap_ID == "ACH-000680" | DepMap_ID == "ACH-000997")
+
+all_ids_temp = data.frame(data_source = "PRISM",depmap_id = PRISM_IDs) %>%
+	add_row(depmap_id = depmap_data %>% filter(DepMap_ID %in% PRISM_IDs) %>% pull(DepMap_ID),
+					data_source = "DepMap") %>%
+	add_row(depmap_id = CCLE_data %>% filter(DepMap_ID %in% PRISM_IDs) %>% pull(DepMap_ID),
+					data_source = "Gene Exp") %>%
+	add_row(depmap_id = CNV_data %>% filter(DepMap_ID %in% PRISM_IDs) %>% pull(DepMap_ID),
+					data_source = "CNV") %>%
+	add_row(depmap_id = proteomics_data %>% filter(DepMap_ID %in% PRISM_IDs) %>% pull(DepMap_ID) %>% unique(),
+					data_source = "Proteomics")
+
+all_ids = all_ids_temp %>%
+	group_by(depmap_id) %>%
+	summarize(data_sources = list(as.factor(data_source)))
+
+upset_plot = all_ids %>% 
+	ggplot(aes(x=data_sources)) + 
+	geom_bar() + 
+	scale_x_upset(n_intersections = 10000) +
+	labs(x="", y="Number of Cell Lines") +
+	BerginskiRMisc::theme_berginski()
+
+ggsave(here('figures/single_model_all_data_regression/cell_line_overlap_upset.png'),
+			 upset_plot, height=5*0.7,width=7*0.7)
+
+BerginskiRMisc::trimImage(here('figures/single_model_all_data_regression/cell_line_overlap_upset.png'))
+# all_ids = data.frame(
+# 	data_source = "PRISM", depmap_ids = list(c(PRISM_IDs))
+# ) 
+# %>%
+# 	add_row(data_source = "DepMap", depmap_ids = list(c(depmap_data %>% filter(DepMap_ID %in% PRISM_IDs) %>% pull(DepMap_ID) %>% unique())))
+```
+
 
 # Correlation with Signif Tests
 
