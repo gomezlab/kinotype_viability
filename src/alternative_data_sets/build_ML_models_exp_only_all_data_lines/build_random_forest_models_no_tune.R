@@ -51,8 +51,11 @@ PRISM_klaeger_imputed = read_rds(here('results/PRISM_klaeger_imputed_tidy.rds'))
 
 CCLE_data = read_rds(here('results/single_model/full_CCLE_expression_set_for_ML.rds'))
 
+all_data_lines = read_rds(here('results/single_model_all_data_regression/all_data_cell_lines.rds'))
+
 PRISM_klaeger_imputed = PRISM_klaeger_imputed %>%
 	filter(depmap_id %in% CCLE_data$DepMap_ID) %>%
+	filter(depmap_id %in% all_data_lines) %>%
 	ungroup()
 
 ###############################################################################
