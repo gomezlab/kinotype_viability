@@ -55,28 +55,28 @@ read_csv_plate_data <- function(file_name,these_compounds,this_cell_line) {
 	return(temp_plate)
 }
 plate_vals = bind_rows(
-	read_csv_plate_data(here('data/PRISM_validation_screen/BT_1.csv'),c("sotrastaurin","ONO-4059 (analog)"),"BT-474"),
+	read_csv_plate_data(here('data/PRISM_validation_screen/BT_1.csv'),c("Sotrastaurin","ONO-4059 (analog)"),"BT-474"),
 	read_csv_plate_data(here('data/PRISM_validation_screen/BT_2.csv'),c("MLN-2480","TAK-733"),"BT-474"),
 	read_csv_plate_data(here('data/PRISM_validation_screen/BT_3.csv'),c("GDC-0994", "Ro-5126766"),"BT-474"),
 	read_csv_plate_data(here('data/PRISM_validation_screen/BT_4.csv'),c("Lestaurtinib","UCN-01"),"BT-474"),
 	read_csv_plate_data(here('data/PRISM_validation_screen/BT_5.csv'),c("PF-3758309","RGB-286638"),"BT-474"),
-	read_csv_plate_data(here('data/PRISM_validation_screen/BT_6.csv'),c("Pexmetinib", "K-252a"),"BT-474"),
+	# read_csv_plate_data(here('data/PRISM_validation_screen/BT_6.csv'),c("Pexmetinib", "K-252a"),"BT-474"),
 	read_csv_plate_data(here('data/PRISM_validation_screen/BT_7.csv'),c("Pexmetinib", "K-252a"),"BT-474"),
-	read_csv_plate_data(here('data/PRISM_validation_screen/BT_8.csv'),c("sotrastaurin","TAK-733"),"BT-474"),
+	read_csv_plate_data(here('data/PRISM_validation_screen/BT_8.csv'),c("Sotrastaurin","TAK-733"),"BT-474"),
 	
-	read_csv_plate_data(here('data/PRISM_validation_screen/HCC_1.csv'),c("sotrastaurin","ONO-4059 (analog)"),"HCC-1806"),
-	read_csv_plate_data(here('data/PRISM_validation_screen/HCC_2.csv'),c("MLN-2480","TAK-733"),"HCC-1806"),
-	read_csv_plate_data(here('data/PRISM_validation_screen/HCC_3.csv'),c("GDC-0994","Ro-5126766"),"HCC-1806"),
-	read_csv_plate_data(here('data/PRISM_validation_screen/HCC_4.csv'),c("Lestaurtinib","UCN-01"),"HCC-1806"),
-	read_csv_plate_data(here('data/PRISM_validation_screen/HCC_5.csv'),c("PF-3758309","RGB-286638"),"HCC-1806"),
-	read_csv_plate_data(here('data/PRISM_validation_screen/HCC_6.csv'),c("Pexmetinib", "K-252a"),"HCC-1806"),
-read_csv_plate_data(here('data/PRISM_validation_screen/HCC_7.csv'),c("Pexmetinib", "K-252a"),"HCC-1806"),
-read_csv_plate_data(here('data/PRISM_validation_screen/HCC_8.csv'),c("sotrastaurin","TAK-733"),"HCC-1806")
+	read_csv_plate_data(here('data/PRISM_validation_screen/HCC_1.csv'),c("Sotrastaurin","ONO-4059 (analog)"),"HCC1806"),
+	read_csv_plate_data(here('data/PRISM_validation_screen/HCC_2.csv'),c("MLN-2480","TAK-733"),"HCC1806"),
+	read_csv_plate_data(here('data/PRISM_validation_screen/HCC_3.csv'),c("GDC-0994","Ro-5126766"),"HCC1806"),
+	read_csv_plate_data(here('data/PRISM_validation_screen/HCC_4.csv'),c("Lestaurtinib","UCN-01"),"HCC1806"),
+	read_csv_plate_data(here('data/PRISM_validation_screen/HCC_5.csv'),c("PF-3758309","RGB-286638"),"HCC1806"),
+	read_csv_plate_data(here('data/PRISM_validation_screen/HCC_6.csv'),c("Pexmetinib", "K-252a"),"HCC1806"),
+	read_csv_plate_data(here('data/PRISM_validation_screen/HCC_7.csv'),c("Pexmetinib", "K-252a"),"HCC1806"),
+	read_csv_plate_data(here('data/PRISM_validation_screen/HCC_8.csv'),c("Sotrastaurin","TAK-733"),"HCC1806")
 )
 
-plate_order = c("sotrastaurin","ONO-4059 (analog)","MLN-2480","TAK-733","GDC-0994",
+plate_order = c("Sotrastaurin","ONO-4059 (analog)","MLN-2480","TAK-733","GDC-0994",
 								"Ro-5126766", "Lestaurtinib", "UCN-01","PF-3758309","RGB-286638","Pexmetinib",
-								"K-252a","Pexmetinib", "K-252a", "sotrastaurin", "TAK-733")
+								"K-252a","Pexmetinib", "K-252a", "Sotrastaurin", "TAK-733")
 
 ```
 
@@ -171,6 +171,7 @@ qc_filter <- function(data_set, viability_threshold = 125) {
 	
 	return(data_set)
 }
+
 dir.create(here('results/validation_results/'), showWarnings = F)
 plate_vals_row_norm = plate_vals %>%
 	left_join(plate_DMSO_means) %>% 
@@ -191,7 +192,7 @@ treatment_via_summaries = plate_vals_row_norm %>%
 ggplot(plate_vals_row_norm %>% filter(compound != "DMSO"), aes(x=concentration_M, y = viability, color=qc_fail)) +
 	geom_hline(aes(yintercept = 90),alpha=0.5) +
 	geom_hline(aes(yintercept = 100),alpha=0.5, linetype = 2) +
-	geom_hline(aes(yintercept = 120),alpha=0.5, linetype = 2) +
+	geom_hline(aes(yintercept = 125),alpha=0.5, linetype = 2) +
 	scale_x_log10() +
 	geom_jitter() +
 	geom_smooth() +

@@ -11,6 +11,8 @@ library(here)
 library(patchwork)
 library(broom)
 library(Metrics)
+
+knitr::opts_knit$set(root.dir = here())
 ```
 
 ```{r}
@@ -32,7 +34,7 @@ testing_results_summary = testing_results %>%
 	group_by(drug,concentration_M,cell_line,depmap_id) %>%
 	summarise(viability = mean(actual_viability))
 
-PRISM_predictions <- readRDS(here('results/model_predictions_1500feat.rds')) %>% 
+PRISM_predictions <- readRDS(here('results/single_model_expression_regression/model_predictions_500feat.rds')) %>% 
 	filter(depmap_id %in% PRISM_sample_info$DepMap_ID, drug %in% testing_results$drug)
 
 compound_order = testing_results %>%
@@ -77,12 +79,16 @@ testing_results_novel = testing_results %>%
 
 ```{r}
 ggplot(testing_results_summary_plot, aes(x=log10(concentration_M),y=viability, color=data_type)) +
+	geom_line(lwd=1.25,alpha=0.75) +
 	geom_point(data = testing_results, aes(x=log10(concentration_M),y=actual_viability, color="Assay Results"), alpha=0.25) +
-	geom_line() +
 	labs(x="Log10 Compound Concentration (M)",y="Cell Viability",color='') +
+	scale_color_manual(values = c("Assay Results" = "#d95f02", "Prediction" = "#7570b3")) +
 	BerginskiRMisc::theme_berginski() +
-	facet_grid(rows = vars(cell_line),cols = vars(drug))
-ggsave(here('figures/validation_screen/double_negative_validation_vs_pred_or_PRISM.png'),height=3,width=11.75)
+	facet_grid(rows = vars(cell_line),cols = vars(drug)) +
+	theme(legend.position = 'bottom',
+				legend.margin=margin(0,0,0,0), 
+				legend.box.margin=margin(-10,-10,-10,-10))
+ggsave(here('figures/validation_screen/double_negative_validation_vs_pred_or_PRISM.png'),height=3,width=8)
 BerginskiRMisc::trimImage(here('figures/validation_screen/double_negative_validation_vs_pred_or_PRISM.png'))
 ```
 
@@ -104,6 +110,7 @@ max_val = max(c(testing_results_summary_novel$viability,
 								testing_results_summary_novel$pred_via))
 
 results_label = paste0("R\u00B2:",signif(overall_r2,3),"\nRMSE:",signif(overall_rmse,3))
+results_title = paste0("R\u00B2:",signif(overall_r2,3)," / RMSE:",signif(overall_rmse,3))
 
 ggplot(testing_results_summary_novel, aes(x=pred_via,y=viability)) + 
 	geom_abline(slope = 1, intercept = 0, alpha = 0.5, linetype = 2) +
@@ -111,70 +118,15 @@ ggplot(testing_results_summary_novel, aes(x=pred_via,y=viability)) +
 	# geom_smooth() +
 	geom_smooth(method = 'lm') +
 	labs(x="Predicted Cell Viability", y="Cell Viability") +
-	xlim(c(0,max_val)) + ylim(c(0,max_val)) +
-	coord_fixed() +
-	geom_text(data = NULL, mapping = aes(x=Inf,y=-Inf,hjust=1,vjust=-0.2), label=results_label) +
+	# xlim(c(0,max_val)) + ylim(c(0,max_val)) +#7570b3
+	scale_x_continuous(breaks = seq(0,1,by=0.25)) +
+	scale_y_continuous(breaks = seq(0,1,by=0.25)) +
+	# coord_fixed() +
+	# geom_text(data = NULL, mapping = aes(x=Inf,y=-Inf,hjust=1,vjust=-0.2), label=results_label) +
+	ggtitle(results_title) +
+	theme(plot.title = element_text(margin=margin(0,0,0,0))) +
 	BerginskiRMisc::theme_berginski()
 
 ggsave(here('figures/validation_screen/double_negative_global_pred_vs_actual.png'), height=3,width=3)
 BerginskiRMisc::trimImage(here('figures/validation_screen/double_negative_global_pred_vs_actual.png'))
-```
-
-```{r}
-overall_r2 = glance(summary(lm(imputed_viability ~ actual_viability, data = testing_results_PRISM)))$r.squared
-overall_rmse = rmse(testing_results_PRISM$actual_viability, testing_results_PRISM$imputed_viability)
-max_val = max(c(testing_results_PRISM$actual_viability,
-								testing_results_PRISM$imputed_viability))
-
-results_label = paste0("R\u00B2:",signif(overall_r2,3),"\nRMSE:",signif(overall_rmse,3))
-
-ggplot(testing_results_PRISM, aes(x=imputed_viability,y=actual_viability, color=drug)) + 
-	geom_abline(slope = 1, intercept = 0, alpha = 0.5, linetype = 2) +
-	geom_point(alpha=0.5) + 
-	# geom_smooth() +
-	geom_smooth(method = 'lm') +
-	labs(x="PRISM Imputed Cell Viability", y="Cell Viability") +
-	xlim(c(0,max_val)) + ylim(c(0,max_val)) +
-	coord_fixed() +
-	# geom_text(data = NULL, mapping = aes(x=Inf,y=-Inf,hjust=1,vjust=-0.2), label=results_label) +
-	BerginskiRMisc::theme_berginski()
-
-ggsave(here('figures/validation_screen/global_pred_vs_actual_PRISM.png'), height=6,width=6)
-BerginskiRMisc::trimImage(here('figures/validation_screen/global_pred_vs_actual_PRISM.png'))
-```
-
-```{r}
-ggplot(testing_results_novel, aes(x=pred_via,y=actual_viability, color=log10(concentration_M))) + 
-	geom_abline(slope = 1, intercept = 0, alpha = 0.5, linetype = 2) +
-	geom_smooth(method = 'lm') +
-	geom_point(size=0.5) + 
-	# geom_smooth() +
-	
-	labs(x="Predicted Cell Viability", y="Cell Viability") +
-	# xlim(c(0,max_val)) + ylim(c(0,max_val)) +
-	# coord_fixed() +
-	BerginskiRMisc::theme_berginski() +
-	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-	scale_color_viridis_c() +
-	facet_grid(rows = vars(cell_line),cols = vars(drug))
-
-ggsave(here('figures/validation_screen/pred_vs_actual_sm.png'), width=11)
-BerginskiRMisc::trimImage(here('figures/validation_screen/pred_vs_actual_sm.png'))
-```
-
-```{r}
-ggplot(testing_results_novel, aes(x=pred_via,y=actual_viability, color=cell_line)) + 
-	geom_abline(slope = 1, intercept = 0, alpha = 0.5, linetype = 2) +
-	geom_point(size=0.25,alpha=0.5) + 
-	# geom_smooth() +
-	geom_smooth(method = 'lm') +
-	labs(x="Predicted Cell Viability", y="Cell Viability") +
-	xlim(c(0,max_val)) + ylim(c(0,max_val)) +
-	coord_fixed() +
-	BerginskiRMisc::theme_berginski() +
-	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-	facet_grid(cols = vars(drug))
-
-ggsave(here('figures/validation_screen/pred_vs_actual_line_color_sm.png'), width=11)
-BerginskiRMisc::trimImage(here('figures/validation_screen/pred_vs_actual_line_color_sm.png'))
 ```

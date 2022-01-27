@@ -11,6 +11,8 @@ library(here)
 library(patchwork)
 library(broom)
 library(Metrics)
+
+knitr::opts_knit$set(root.dir = here())
 ```
 
 ```{r}
@@ -26,7 +28,7 @@ testing_results = read_rds(here('results/validation_results/validation_screen.rd
 	left_join(PRISM_sample_info %>% select(cell_line_name,DepMap_ID), by=c('cell_line'='cell_line_name')) %>%
 	rename(drug = compound, actual_viability = viability, depmap_id = DepMap_ID) %>%
 	mutate(drug = as.character(drug)) %>%
-	mutate(drug = ifelse(drug == "ONO-4059 analogue","ONO-4059\nanalogue",drug)) %>%
+	mutate(drug = ifelse(drug == "ONO-4059 (analog)","ONO-4059\nanalogue",drug)) %>%
 	#We won't need the DMSO samples
 	filter(drug != "DMSO") %>%
 	mutate(actual_viability = actual_viability/100)
@@ -35,13 +37,12 @@ testing_results_summary = testing_results %>%
 	group_by(drug,concentration_M,cell_line,depmap_id) %>%
 	summarise(viability = mean(actual_viability))
 
-PRISM_predictions <- readRDS(here('results/single_model_expression_regression/model_predictions_1500feat.rds'))
+PRISM_predictions <- readRDS(here('results/single_model_expression_regression/model_predictions_500feat.rds'))
 
 PRISM_predictions = PRISM_predictions %>% 
 	mutate(drug = ifelse(drug == "ONO-4059 analogue","ONO-4059\nanalogue",drug)) %>%
 	filter(depmap_id %in% PRISM_sample_info$DepMap_ID, drug %in% testing_results$drug)
 	
-
 PRISM_klaeger_imputed_tidy <- readRDS(here("results/PRISM_klaeger_imputed_tidy.rds")) %>%
 	rename(concentration_M = klaeger_conc) %>%
 	filter(depmap_id %in% testing_results$depmap_id, drug %in% testing_results$drug)
@@ -52,6 +53,7 @@ compound_order = testing_results %>%
 	arrange(desc(mean_via)) %>%
 	ungroup()
 ```
+
 ```{r}
 testing_results_summary_plot = testing_results_summary %>% 
 	mutate(data_type = "Assay Results") %>%
@@ -96,12 +98,17 @@ testing_results_PRISM = testing_results %>%
 
 ```{r}
 ggplot(testing_results_summary_plot, aes(x=log10(concentration_M),y=viability, color=data_type)) +
+	geom_line(lwd=1.25,alpha=0.75) +
 	geom_point(data = testing_results, aes(x=log10(concentration_M),y=actual_viability, color="Assay Results"), alpha=0.25) +
-	geom_line() +
 	labs(x="Log10 Compound Concentration (M)",y="Cell Viability",color='') +
 	BerginskiRMisc::theme_berginski() +
-	facet_grid(rows = vars(cell_line),cols = vars(drug))
-ggsave(here('figures/validation_screen/validation_vs_pred_or_PRISM.png'),height=3,width=11.75)
+	scale_color_manual(values = c("PRISM" = "#1b9e77", "Assay Results" = "#d95f02", 
+																"Prediction" = "#7570b3")) +
+	facet_grid(rows = vars(cell_line),cols = vars(drug)) +
+	theme(legend.position = 'bottom',
+				legend.margin=margin(0,0,0,0), 
+				legend.box.margin=margin(-10,-10,-10,-10))
+ggsave(here('figures/validation_screen/validation_vs_pred_or_PRISM.png'),height=3,width=12)
 BerginskiRMisc::trimImage(here('figures/validation_screen/validation_vs_pred_or_PRISM.png'))
 ```
 
@@ -112,6 +119,7 @@ model_assessments_novel = testing_results_summary_novel %>%
 	mutate(r2 = map_dbl(data, ~glance(summary(lm(viability ~ pred_via, data=.x)))$r.squared)) %>%
 	mutate(rmse = map_dbl(data, ~rmse(.x$viability, .x$pred_via))) %>%
 	# mutate(drug = fct_relevel(drug,compound_order)) %>%
+	arrange(desc(r2)) %>%
 	identity()
 
 model_assessments_PRISM = testing_results_PRISM %>%
@@ -119,7 +127,7 @@ model_assessments_PRISM = testing_results_PRISM %>%
 	nest() %>%
 	mutate(r2 = map_dbl(data, ~glance(summary(lm(actual_viability ~ imputed_viability, data=.x)))$r.squared)) %>%
 	mutate(rmse = map_dbl(data, ~rmse(.x$actual_viability, .x$imputed_viability))) %>%
-	mutate(drug = fct_relevel(drug,compound_order)) %>%
+	# mutate(drug = fct_relevel(drug,compound_order)) %>%
 	identity()
 ```
 
@@ -130,6 +138,7 @@ max_val = max(c(testing_results_summary_novel$viability,
 								testing_results_summary_novel$pred_via))
 
 results_label = paste0("R\u00B2:",signif(overall_r2,3),"\nRMSE:",signif(overall_rmse,3))
+results_title = paste0("R\u00B2:",signif(overall_r2,3)," / RMSE:",signif(overall_rmse,3))
 
 ggplot(testing_results_summary_novel, aes(x=pred_via,y=viability)) + 
 	geom_abline(slope = 1, intercept = 0, alpha = 0.5, linetype = 2) +
@@ -137,10 +146,15 @@ ggplot(testing_results_summary_novel, aes(x=pred_via,y=viability)) +
 	# geom_smooth() +
 	geom_smooth(method = 'lm') +
 	labs(x="Predicted Cell Viability", y="Cell Viability") +
-	xlim(c(0,max_val)) + ylim(c(0,max_val)) +
-	coord_fixed() +
-	geom_text(data = NULL, mapping = aes(x=Inf,y=-Inf,hjust=1,vjust=-0.2), label=results_label) +
-	BerginskiRMisc::theme_berginski()
+	# xlim(c(0,max_val)) + ylim(c(0,max_val)) +
+	scale_x_continuous(breaks = seq(0,1,by=0.25)) +
+	scale_y_continuous(breaks = seq(0,1,by=0.25)) +
+	# coord_fixed() +
+	ggtitle(results_title) +
+	# geom_text(data = NULL, mapping = aes(x=Inf,y=-Inf,hjust=1,vjust=-0.2), label=results_label, color='green',alpha=0.75) +
+	BerginskiRMisc::theme_berginski() +
+	theme(plot.title = element_text(margin=margin(0,0,0,0))) +
+	NULL
 
 ggsave(here('figures/validation_screen/global_pred_vs_actual.png'), height=3,width=3)
 BerginskiRMisc::trimImage(here('figures/validation_screen/global_pred_vs_actual.png'))
@@ -154,7 +168,7 @@ max_val = max(c(testing_results_PRISM$actual_viability,
 
 results_label = paste0("R\u00B2:",signif(overall_r2,3),"\nRMSE:",signif(overall_rmse,3))
 
-ggplot(testing_results_PRISM, aes(x=imputed_viability,y=actual_viability, color=drug)) + 
+ggplot(testing_results_PRISM, aes(x=imputed_viability,y=actual_viability)) + 
 	geom_abline(slope = 1, intercept = 0, alpha = 0.5, linetype = 2) +
 	geom_point(alpha=0.5) + 
 	# geom_smooth() +
@@ -187,6 +201,7 @@ ggplot(testing_results_novel, aes(x=pred_via,y=actual_viability, color=log10(con
 ggsave(here('figures/validation_screen/pred_vs_actual_sm.png'), width=11)
 BerginskiRMisc::trimImage(here('figures/validation_screen/pred_vs_actual_sm.png'))
 ```
+
 ```{r}
 ggplot(testing_results_novel, aes(x=pred_via,y=actual_viability, color=cell_line)) + 
 	geom_abline(slope = 1, intercept = 0, alpha = 0.5, linetype = 2) +
