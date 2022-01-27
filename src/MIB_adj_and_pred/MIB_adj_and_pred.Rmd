@@ -48,6 +48,13 @@ pred_data_certain_MIBs_adj = klaeger_MIBs_adj %>%
 	pivot_wider(names_from = act_gene_name, values_from = intensity_adj_certain) %>% 
 	left_join(CCLE_data)
 
+pred_data_fuzzy_MIBs_adj = klaeger_MIBs_adj %>%
+	select(drug, gene_name,concentration_M,DepMap_ID,intensity_adj_fuzzy) %>%
+	mutate(act_gene_name = paste0("act_",gene_name)) %>%
+	select(-gene_name) %>%
+	pivot_wider(names_from = act_gene_name, values_from = intensity_adj_fuzzy) %>% 
+	left_join(CCLE_data)
+
 #Also build the modified data for predictions purposes
 pred_data_no_MIBs_adj = klaeger_MIBs_adj %>%
 	select(drug,concentration_M,DepMap_ID) %>%
@@ -134,17 +141,18 @@ toc()
 # Make Predictions on Unmodifed and Modified Klaeger Vectors
 
 ```{r}
-all_data_model = read_rds(here('results/single_model_expression_regression/final_model_500feat.rds'))
-```
-
-```{r}
 MIBs_certain_pred = predict(rand_forest_model,
 														pred_data_certain_MIBs_adj %>%
+															mutate(depmap_id = NA, klaeger_conc = NA, imputed_viability = NA))
+
+MIBs_fuzzy_pred = predict(rand_forest_model,
+														pred_data_fuzzy_MIBs_adj %>%
 															mutate(depmap_id = NA, klaeger_conc = NA, imputed_viability = NA))
 
 MIBS_preds = pred_data_certain_MIBs_adj %>%
 	select(drug,concentration_M,DepMap_ID) %>%
 	mutate(certain_adj_pred = MIBs_certain_pred$.pred) %>%
+	mutate(fuzzy_adj_pred = MIBs_fuzzy_pred$.pred) %>%
 	left_join(PRISM_klaeger_imputed, by=c('DepMap_ID' = 'depmap_id', 'concentration_M'='klaeger_conc', 'drug'='drug')) %>%
 	filter(!is.na(imputed_viability))
 
@@ -170,10 +178,12 @@ MIBS_preds = MIBS_preds %>%
 ```{r}
 no_adj_r2 = glance(summary(lm(imputed_viability ~ no_adj_pred, data=MIBS_preds)))$r.squared
 certain_adj_r2 = glance(summary(lm(imputed_viability ~ certain_adj_pred, data=MIBS_preds)))$r.squared
+fuzzy_adj_r2 = glance(summary(lm(imputed_viability ~ fuzzy_adj_pred, data=MIBS_preds)))$r.squared
 cv_r2 = glance(summary(lm(imputed_viability ~ CV_pred, data=MIBS_preds)))$r.squared
 
 no_adj_rmse = Metrics::rmse(MIBS_preds$imputed_viability, MIBS_preds$no_adj_pred)
 certain_adj_rmse = Metrics::rmse(MIBS_preds$imputed_viability, MIBS_preds$certain_adj_pred)
+fuzzy_adj_rmse = Metrics::rmse(MIBS_preds$imputed_viability, MIBS_preds$fuzzy_adj_pred)
 cv_rmse = Metrics::rmse(MIBS_preds$imputed_viability, MIBS_preds$CV_pred)
 
 cross_val = MIBS_preds %>% ggplot(aes(x=imputed_viability,y=CV_pred)) +
@@ -181,16 +191,25 @@ cross_val = MIBS_preds %>% ggplot(aes(x=imputed_viability,y=CV_pred)) +
 	geom_abline(slope = 1, intercept = 0,linetype=2) +
 	geom_smooth(method = 'lm') +
 	labs(x="Actual Imputed Viability",y="Cross Validation Viability") +
-	ggtitle(paste0("R2: ", signif(cv_r2,3), "  RMSE: ", signif(cv_rmse,3))) +
+	ggtitle(paste0("R\u00B2: ", signif(cv_r2,3), "  RMSE: ", signif(cv_rmse,3))) +
 	# xlim(c(0,2)) + ylim(c(0,2)) +
 	BerginskiRMisc::theme_berginski()
 
-MIBs_adj = MIBS_preds %>% ggplot(aes(x=imputed_viability,y=certain_adj_pred)) +
+MIBs_adj_certain = MIBS_preds %>% ggplot(aes(x=imputed_viability,y=certain_adj_pred)) +
 	geom_point(size=0,alpha=0.25) +
 	geom_abline(slope = 1, intercept = 0,linetype=2) +
 	geom_smooth(method = 'lm') +
-	labs(x="Actual Imputed Viability",y="MIBs Adjusted Viability Prediction") +
-	ggtitle(paste0("R2: ", signif(certain_adj_r2,3), "  RMSE: ", signif(certain_adj_rmse,3))) +
+	labs(x="Actual Imputed Viability",y="MIBs Adjusted Viability Prediction - Certain") +
+	ggtitle(paste0("R\u00B2: ", signif(certain_adj_r2,3), "  RMSE: ", signif(certain_adj_rmse,3))) +
+	# xlim(c(0,2)) + ylim(c(0,2)) +
+	BerginskiRMisc::theme_berginski()
+
+MIBs_adj_fuzzy = MIBS_preds %>% ggplot(aes(x=imputed_viability,y=fuzzy_adj_pred)) +
+	geom_point(size=0,alpha=0.25) +
+	geom_abline(slope = 1, intercept = 0,linetype=2) +
+	geom_smooth(method = 'lm') +
+	labs(x="Actual Imputed Viability",y="MIBs Adjusted Viability Prediction - fuzzy") +
+	ggtitle(paste0("R\u00B2: ", signif(fuzzy_adj_r2,3), "  RMSE: ", signif(fuzzy_adj_rmse,3))) +
 	# xlim(c(0,2)) + ylim(c(0,2)) +
 	BerginskiRMisc::theme_berginski()
 
@@ -199,10 +218,12 @@ no_adj_plot = MIBS_preds %>% ggplot(aes(x=imputed_viability,y=no_adj_pred)) +
 	geom_abline(slope = 1, intercept = 0,linetype=2) +
 	geom_smooth(method = 'lm') +
 	labs(x="Actual Imputed Viability",y="Unadjusted Viability Prediction") +
-	ggtitle(paste0("R2: ", signif(no_adj_r2,3), "  RMSE: ", signif(no_adj_rmse,3))) +
+	ggtitle(paste0("R\u00B2: ", signif(no_adj_r2,3), "  RMSE: ", signif(no_adj_rmse,3))) +
 	# xlim(c(0,2)) + ylim(c(0,2)) +
 	BerginskiRMisc::theme_berginski()
 
-ggsave(here('figures/single_model_expression/MIBS_adj_vs_CV.png'), cross_val + MIBs_adj + no_adj_plot, width=8*(3/2),height=4)
-
+ggsave(here('figures/single_model_expression/MIBS_adj_vs_CV.png'), 
+			 (cross_val + no_adj_plot) / (MIBs_adj_certain + MIBs_adj_fuzzy), 
+			 width=7,height=7,dpi=300)
+BerginskiRMisc::trimImage(here('figures/single_model_expression/MIBS_adj_vs_CV.png'))
 ```
