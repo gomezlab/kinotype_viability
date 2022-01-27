@@ -20,6 +20,8 @@ final_model <- read_rds(here('results/single_model_expression_regression/final_m
 
 gene_classifications = read_csv(here('data/KlaegerScience2017/manual_gene_labels.csv')) %>%
 	bind_rows(all_kinases %>% select(symbol,class) %>% rename(gene_name = symbol)) %>% 
+	#adding extra label for abbreviated activation name
+	bind_rows(data.frame(gene_name = "CSNK2A(1/3)", class = "Light")) %>%
 	distinct()
 ```
 
