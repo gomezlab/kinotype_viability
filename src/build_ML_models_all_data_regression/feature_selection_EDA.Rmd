@@ -102,10 +102,23 @@ per_rank = ggplot(all_cor, aes(x=rank,y=sub_percent_rank,color=feature_type)) +
 ggsave(here('figures/feature_selection_all/group_perc_rank.png'),width=6*0.75,height=5*0.75)
 BerginskiRMisc::trimImage(here('figures/feature_selection_all/group_perc_rank.png'))
 
-per_rank_zoom = ggplot(all_cor %>% filter(rank <= 5500), aes(x=rank,y=sub_percent_rank,color=feature_type)) +
+zoom_graph_set = all_cor %>% 
+	filter(rank <= 2000)
+
+zoom_graph_set = bind_rows(
+	zoom_graph_set %>% 
+		group_by(feature_type) %>% 
+		arrange(desc(rank)) %>% 
+		slice(1) %>% 
+		ungroup() %>% 
+		mutate(feature = paste0(feature,"_plot_extend"), 
+					 rank = 2000), 
+	zoom_graph_set)
+
+per_rank_zoom = ggplot(zoom_graph_set, aes(x=rank,y=sub_percent_rank,color=feature_type)) +
 	geom_line(size=1.5, alpha=0.75) +
 	labs(x="Overall Correlation Rank",y="Percentile Rank within Feature", color='') +
-	scale_x_continuous(breaks=seq(0,4000,by=2000)) +
+	scale_x_continuous(breaks=seq(0,2000,by=500)) +
 	theme(legend.position = "none", aspect.ratio = 1:1) +
 	BerginskiRMisc::theme_berginski()
 ggsave(here('figures/feature_selection_all/group_perc_rank_zoom.png'),width=6*0.75,height=5*0.75)
@@ -130,11 +143,10 @@ ggsave(here('figures/feature_selection_all/selection_order_full.png'),
 			 width=7.5,height=3.2)
 BerginskiRMisc::trimImage(here('figures/feature_selection_all/selection_order_full.png'))
 
-
-rank_zoom = ggplot(all_cor %>% filter(rank <= 5500), aes(x=rank,y=sub_rank,color=feature_type)) +
+rank_zoom = ggplot(zoom_graph_set, aes(x=rank,y=sub_rank,color=feature_type)) +
 	geom_line(size=1.5, alpha=0.75) +
 	labs(x="Overall Correlation Rank",y="Number of Features", color='') +
-	scale_x_continuous(breaks=seq(0,4000,by=2000)) +
+	scale_x_continuous(breaks=seq(0,2000,by=500)) +
 	theme(legend.position = "none", aspect.ratio = 1:1) +
 	BerginskiRMisc::theme_berginski()
 ggsave(here('figures/feature_selection_all/group_rank_count_zoom.png'),width=6*0.75,height=5*0.75)

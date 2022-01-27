@@ -52,6 +52,9 @@ PRISM_klaeger_imputed = PRISM_klaeger_imputed %>%
 	filter(depmap_id %in% proteomics_data$DepMap_ID) %>%
 	ungroup()
 
+write_rds(unique(PRISM_klaeger_imputed$depmap_id),
+					here('results/single_model_all_data_regression/all_data_cell_lines.rds'))
+
 if (file.exists(here('results/single_model_all_data_regression/CV_split_row_nums.rds'))) {
 	fold_ids = read_rds(here('results/single_model_all_data_regression/CV_split_row_nums.rds'))
 } else {

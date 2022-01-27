@@ -11,7 +11,6 @@ library(here)
 library(tidymodels)
 library(patchwork)
 library(tictoc)
-library(gt)
 
 knitr::opts_knit$set(root.dir = here())
 model_results = data.frame()
@@ -23,8 +22,8 @@ all_pred = data.frame()
 ```{r}
 tic()
 
-for (feat_count in c(100,200,300,400,500,1000,1500,2000)) {
-	model_files = Sys.glob(here('results/single_model_expression_regression/rand_forest/',
+for (feat_count in c(100,200,300,400,500,600,700,800,900,1000,1500,2000)) {
+	model_files = Sys.glob(here('results/single_model_exp_only_all_data_lines/rand_forest/',
 															sprintf('%dfeat_notune_pred',feat_count),
 															"*"))
 	
@@ -53,7 +52,7 @@ toc()
 ```{r}
 tic()
 
-for (feat_count in c(100,200,300,400,500,1000,1500,2000)) {
+for (feat_count in c(100,200,300,400,500,600,700,800,900,1000,1500,2000)) {
 	model_files = Sys.glob(here('results/single_model_all_data_regression/rand_forest/',
 															sprintf('%dfeat_notune_pred',feat_count),
 															"*"))
@@ -78,7 +77,6 @@ for (feat_count in c(100,200,300,400,500,1000,1500,2000)) {
 toc()
 ```
 
-
 ```{r}
 model_summary = model_results %>% 
 	group_by(feat_count,trees,model_type,data_set) %>% 
@@ -102,7 +100,7 @@ model_summary = model_results %>%
 ```{r}
 r2_plot = ggplot(model_summary, 
 			 aes(y=r2_estimate,x=feat_count, color=data_set_FN, shape=data_set_FN)) + 
-	geom_point(alpha=0.8) + 
+	geom_point(alpha=0.6) + 
 	# geom_errorbar(aes(ymin=r2_conf.low,ymax=r2_conf.high)) +
 	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
 	labs(x="Number of Features",y="R\u00B2", color="",shape="") +
@@ -110,7 +108,7 @@ r2_plot = ggplot(model_summary,
 
 rmse_plot = ggplot(model_summary, 
 			 aes(y=rmse_estimate,x=feat_count, color=data_set_FN, shape=data_set_FN)) + 
-	geom_point(alpha=0.8) + 
+	geom_point(alpha=0.6) + 
 	# geom_errorbar(aes(ymin=rmse_conf.low,ymax=rmse_conf.high)) +
 	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
 	labs(x="Number of Features",y="RMSE",color="",shape="") +
