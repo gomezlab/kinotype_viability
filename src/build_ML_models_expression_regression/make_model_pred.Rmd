@@ -10,6 +10,7 @@ library(tidyverse)
 library(here)
 library(tidymodels)
 library(tictoc)
+library(writexl)
 
 knitr::opts_knit$set(root.dir = here())
 ```
@@ -96,7 +97,7 @@ for (this_conc in unique(not_tested_data$concentration_M)) {
 																	this_subset %>%
 																		mutate(klaeger_conc = NA, imputed_viability = NA)) %>%
 		pull(.pred)
-
+	
 	model_predictions = bind_rows(
 		model_predictions,
 		this_subset %>%
@@ -108,4 +109,23 @@ model_predictions %>%
 	arrange(depmap_id,drug,concentration_M) %>%
 	write_rds(here('results/single_model_expression_regression/model_predictions_500feat.rds'), compress = 'gz')
 toc()
+```
+
+```{r}
+model_predictions = read_rds(here('results/single_model_expression_regression/model_predictions_500feat.rds'))
+
+sample_info = read_csv(here('data/CCLE_data/sample_info.csv.gz')) %>%
+	mutate(cell_line_name_extra = paste0(cell_line_name, "\n",lineage_subtype, "\n",lineage_sub_subtype))
+
+model_predictions_tidy = model_predictions %>%
+	mutate(pred_via = signif(pred_via,3)) %>%
+	left_join(sample_info %>% select(DepMap_ID,cell_line_name),
+						by=c('depmap_id'='DepMap_ID')) %>%
+	select(depmap_id,cell_line_name,everything())
+
+model_prediction_wide_concentration = model_predictions_tidy %>%
+	pivot_wider(id_cols = c(depmap_id,cell_line_name,drug),names_from = concentration_M, values_from = pred_via)
+
+write_xlsx(path = here('results/single_model_expression_regression/supplemental_preds.xlsx'), 
+					 x = list(spread_predictions = as.data.frame(model_prediction_wide_concentration)))
 ```
