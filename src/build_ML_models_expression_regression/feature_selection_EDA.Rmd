@@ -315,7 +315,7 @@ for (i in 1:10) {
 tic()
 
 frac_features_in_all_folds = data.frame()
-for (this_num_feat in c(10:6000)) {
+for (this_num_feat in c(10:2000)) {
 	this_frac_in_all = all_cor_cv_sets %>% 
 		filter(rank <= this_num_feat) %>% 
 		count(feature) %>% 
