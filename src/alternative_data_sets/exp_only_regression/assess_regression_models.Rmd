@@ -18,149 +18,148 @@ model_results = data.frame()
 all_pred = data.frame()
 ```
 
-# Rand Forest Model Assessment
-
-
-```{r}
-tic()
-
-for (feat_count in c(50,100,150,200,300,400,500,1000,1500,2000,3000,4000,5000)) {
-	
-	for (hyper in 1:1) {
-		model_files = Sys.glob(here('results/single_model_expression_regression',
-																sprintf('rand_forest_param_scan_%dfeat_notune',feat_count),
-																sprintf('hyper%03d*.rds', hyper)))
-		
-		if (length(model_files) != 10) {
-			next;
-		}
-		
-		for (i in 1:length(model_files)) {
-			this_cv_data = read_rds(model_files[i]) %>%
-				collect_predictions()
-			
-			all_pred = bind_rows(
-				all_pred,
-				this_cv_data %>% mutate(feat_count = feat_count, 
-																trees = 500, 
-																model_type = 'rand_forest')
-			)
-			
-			model_results = bind_rows(
-				model_results,
-				data.frame(feat_count = feat_count,
-									 hyper = i,
-									 trees = 500,
-									 model_type = 'rand_forest',
-									 rmse = sqrt(mean((this_cv_data$.pred - this_cv_data$target_viability)^2)),
-									 r2 = glance(summary(lm(this_cv_data$.pred ~ this_cv_data$target_viability)))$r.squared,
-									 data_set = "exp"))
-		}
-	}
-	
-}
-
-toc()
-```
+# Rand Forest Model Baseline
 
 ```{r}
 tic()
 
-for (feat_count in c(50,100,150,200,300,400,500,1000,1500,2000,3000,4000,5000)) {
+for (feat_count in c(100,200,300,400,500,600,700,800,900,1000,1500,2000)) {
+	model_files = Sys.glob(here('results/single_model_expression_regression/rand_forest/',
+															sprintf('%dfeat_notune_pred',feat_count),
+															"*"))
 	
-	for (hyper in 1:1) {
-		model_files = Sys.glob(here('results/single_model_all_data_regression',
-																sprintf('rand_forest_param_scan_%dfeat_notune',feat_count),
-																sprintf('hyper%03d*.rds', hyper)))
+	for (this_file in model_files) {
+		these_cv_results = read_rds(this_file) %>%
+			mutate(fold_file = basename(this_file),
+						 feat_count = feat_count)
 		
-		if (length(model_files) != 10) {
-			next;
-		}
-		
-		for (i in 1:length(model_files)) {
-			this_cv_data = read_rds(model_files[i]) %>%
-				collect_predictions()
-			
-			all_pred = bind_rows(
-				all_pred,
-				this_cv_data %>% mutate(feat_count = feat_count, 
-																trees = 500, 
-																model_type = 'rand_forest')
-			)
-			
-			model_results = bind_rows(
-				model_results,
-				data.frame(feat_count = feat_count,
-									 hyper = i,
-									 trees = 500,
-									 model_type = 'rand_forest',
-									 rmse = sqrt(mean((this_cv_data$.pred - this_cv_data$target_viability)^2)),
-									 r2 = glance(summary(lm(this_cv_data$.pred ~ this_cv_data$target_viability)))$r.squared,
-									 data_set = "all"))
-		}
+		model_results = bind_rows(
+			model_results,
+			data.frame(feat_count = feat_count,
+								 trees = 500,
+								 fold_file = basename(this_file),
+								 data_set = 'exp_activation',
+								 rmse = sqrt(mean((these_cv_results$.pred - these_cv_results$target_viability)^2)),
+								 r2 = glance(summary(lm(these_cv_results$.pred ~ these_cv_results$target_viability)))$r.squared))
 	}
 	
 }
-
 toc()
 ```
+
+# Rand Forest Model Exp Only
+
+```{r}
+# tic()
+# 
+# for (feat_count in c(100,200,300,400,500,600,700,800,900,1000,1500,2000)) {
+# 	model_files = Sys.glob(here('results/single_model_exp_only_regression/rand_forest/',
+# 															sprintf('%dfeat_notune_pred',feat_count),
+# 															"*"))
+# 	
+# 	for (this_file in model_files) {
+# 		these_cv_results = read_rds(this_file) %>%
+# 			mutate(fold_file = basename(this_file),
+# 						 feat_count = feat_count)
+# 		
+# 		model_results = bind_rows(
+# 			model_results,
+# 			data.frame(feat_count = feat_count,
+# 								 trees = 500,
+# 								 fold_file = basename(this_file),
+# 								 data_set = 'exp_only',
+# 								 rmse = sqrt(mean((these_cv_results$.pred - these_cv_results$target_viability)^2)),
+# 								 r2 = glance(summary(lm(these_cv_results$.pred ~ these_cv_results$target_viability)))$r.squared))
+# 	}
+# 	
+# }
+# toc()
+```
+# Kinase Activation and Expression
 
 ```{r}
 tic()
 
-for (feat_count in c(50,100,150,200,300,400,500,1000,1500,2000,3000,4000,5000)) {
+for (feat_count in c(100,200,300,400,500,1000,1500,2000)) {
+	model_files = Sys.glob(here('results/single_model_exp_only_kin_regression/rand_forest/',
+															sprintf('%dfeat_notune_pred',feat_count),
+															"*"))
 	
-	for (hyper in 1:1) {
-		model_files = Sys.glob(here('results/single_model_exp_only_regression',
-																sprintf('rand_forest_param_scan_%dfeat_notune',feat_count),
-																sprintf('hyper%03d*.rds', hyper)))
+	for (this_file in model_files) {
+		these_cv_results = read_rds(this_file) %>%
+			mutate(fold_file = basename(this_file),
+						 feat_count = feat_count)
 		
-		if (length(model_files) != 10) {
-			next;
-		}
-		
-		for (i in 1:length(model_files)) {
-			this_cv_data = read_rds(model_files[i]) %>%
-				collect_predictions()
-			
-			all_pred = bind_rows(
-				all_pred,
-				this_cv_data %>% mutate(feat_count = feat_count, 
-																trees = 500, 
-																model_type = 'rand_forest')
-			)
-			
-			model_results = bind_rows(
-				model_results,
-				data.frame(feat_count = feat_count,
-									 hyper = i,
-									 trees = 500,
-									 model_type = 'rand_forest',
-									 rmse = sqrt(mean((this_cv_data$.pred - this_cv_data$target_viability)^2)),
-									 r2 = glance(summary(lm(this_cv_data$.pred ~ this_cv_data$target_viability)))$r.squared,
-									 data_set = "exp_only"))
-		}
+		model_results = bind_rows(
+			model_results,
+			data.frame(feat_count = feat_count,
+								 trees = 500,
+								 fold_file = basename(this_file),
+								 data_set = 'kinase_act',
+								 rmse = sqrt(mean((these_cv_results$.pred - these_cv_results$target_viability)^2)),
+								 r2 = glance(summary(lm(these_cv_results$.pred ~ these_cv_results$target_viability)))$r.squared))
 	}
 	
 }
-
 toc()
-notifysendR::notify_send("done")
 ```
+
+# Kinase Activation and Expression
+
+```{r}
+tic()
+
+for (feat_count in c(100,200,300,400,500)) {
+	model_files = Sys.glob(here('results/single_model_act_only_regression/rand_forest/',
+															sprintf('%dfeat_notune_pred',feat_count),
+															"*"))
+	
+	for (this_file in model_files) {
+		these_cv_results = read_rds(this_file) %>%
+			mutate(fold_file = basename(this_file),
+						 feat_count = feat_count)
+		
+		model_results = bind_rows(
+			model_results,
+			data.frame(feat_count = feat_count,
+								 trees = 500,
+								 fold_file = basename(this_file),
+								 data_set = "act_only",
+								 rmse = sqrt(mean((these_cv_results$.pred - these_cv_results$target_viability)^2)),
+								 r2 = glance(summary(lm(these_cv_results$.pred ~ these_cv_results$target_viability)))$r.squared))
+	}
+	
+}
+toc()
+```
+
 
 ```{r}
 model_summary = model_results %>% 
-	group_by(feat_count,trees,model_type,data_set) %>% 
+	group_by(feat_count,trees,data_set) %>% 
 	nest() %>%
 	mutate(rmse = map(data, ~ tidy(t.test(.x$rmse)))) %>%
 	mutate(r2 = map(data, ~ tidy(t.test(.x$r2)))) %>%
 	unnest(cols=c(rmse,r2),names_sep = "_") %>%
 	mutate(data_set_FN = case_when(
-		data_set == "exp" ~ "Activation and Expression",
-		data_set == "exp_only" ~ "Expression",
-		data_set == "all" ~ "Activation and All"
+		data_set == "exp_activation" ~ "Act Exp",
+		data_set == "kinase_act" ~ "Kinase Act Exp",
+		data_set == "exp_only" ~ "Exp",
+		data_set == "act_only" ~ "Act"
 	)) %>%
-	select(model_type,feat_count,trees,r2_estimate,rmse_estimate,everything())
+	select(feat_count,trees,data_set,r2_estimate,rmse_estimate,everything())
+
+# model_summary = model_results %>% 
+# 	group_by(feat_count,trees,model_type) %>% 
+# 	nest() %>%
+# 	mutate(rmse = map(data, ~ tidy(t.test(.x$rmse)))) %>%
+# 	mutate(r2 = map(data, ~ tidy(t.test(.x$r2)))) %>%
+# 	unnest(cols=c(rmse,r2),names_sep = "_") %>%
+# 	mutate(data_set_FN = case_when(
+# 		data_set == "exp_activation" ~ "Activation and Expression",
+# 		data_set == "exp_only" ~ "Expression"
+# 	)) %>%
+# 	select(model_type,feat_count,trees,r2_estimate,rmse_estimate,everything())
 ```
 
 
