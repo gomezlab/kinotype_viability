@@ -128,8 +128,8 @@ CV_aver_eff = data.frame()
 for (this_fold_id in unique(fold_ids)) {
 	aver_eff = PRISM_klaeger_imputed %>% 
 		slice(which(fold_ids != this_fold_id)) %>%
-		# group_by(drug,klaeger_conc) %>%
-		group_by(drug) %>%
+		group_by(klaeger_conc) %>%
+		# group_by(drug) %>%
 		summarise(aver_via = mean(imputed_viability)) %>%
 		ungroup()
 	
@@ -142,7 +142,7 @@ for (this_fold_id in unique(fold_ids)) {
 }
 
 naive_average_r2 = cor(CV_aver_eff$imputed_viability,CV_aver_eff$aver_via)^2
-naive_average_rmse = rmse(CV_aver_eff$imputed_viability,CV_aver_eff$aver_via)
+naive_average_rmse = Metrics::rmse(CV_aver_eff$imputed_viability,CV_aver_eff$aver_via)
 ```
 
 
