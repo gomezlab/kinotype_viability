@@ -8,26 +8,32 @@ output: github_document
 ```{r setup, include=FALSE}
 library(tidyverse)
 library(here)
-library(vroom)
 library(tictoc)
 library(tidymodels)
 library(patchwork)
 
 knitr::opts_knit$set(root.dir = here())
-# Sys.setenv("VROOM_CONNECTION_SIZE" = 131072 * 10)
+Sys.setenv("VROOM_CONNECTION_SIZE" = 131072 * 10)
 ```
 
 # Loading Depmap Data Sets
 
 ```{r}
-depmap_data = read_rds(here('data/depmap_data/full_depmap_tidy.rds'))
+crispr_depmap = read_csv(here('data/CCLE_data/CRISPR_gene_effect_2021_Q3_release.csv.gz')) %>%
+    pivot_longer(-DepMap_ID, names_to = 'gene_plus_ID', values_to = 'depmap_score') %>%
+    extract(gene_plus_ID,
+            into = c('hgnc_symbol','NCBI_ID'),
+            regex = "(\\S+) \\((.*)\\)") %>%
+    mutate(DepMap_ID = as.factor(DepMap_ID),
+           hgnc_symbol = as.factor(hgnc_symbol),
+           NCBI_ID = as.factor(NCBI_ID))
 ```
 
 ```{r}
 #It looks like several of the DepMap Lines that are also covered by PRISM have
 #some genes where the depmap_score is marked at NA. Only a few lines have this
 #problem, so I'm just going to filter them out of the downstream processing.
-depmap_missing_lines_data = depmap_data %>% 
+depmap_missing_lines_data = crispr_depmap %>% 
 	group_by(DepMap_ID) %>% 
 	summarise(na_count = sum(is.na(depmap_score))) %>% 
 	filter(na_count > 0)
@@ -37,14 +43,6 @@ depmap_missing_lines_data = depmap_data %>%
 stopifnot(dim(depmap_missing_lines_data)[1] == 10)
 
 depmap_data_filt = depmap_data %>%
-	filter(! DepMap_ID %in% depmap_missing_lines_data$DepMap_ID)
-```
-
-# Prepping Data for ML
-
-```{r}
-depmap_data_filt %>% 
-	select(-NCBI_ID) %>%
-	pivot_wider(names_from = hgnc_symbol, values_from = depmap_score, names_prefix = "dep_") %>%
+	filter(! DepMap_ID %in% depmap_missing_lines_data$DepMap_ID) %>%
 	write_rds(here('results/single_model/full_depmap_for_ML.rds'), compress = 'gz')
 ```
