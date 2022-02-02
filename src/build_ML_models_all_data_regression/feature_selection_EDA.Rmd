@@ -36,7 +36,7 @@ CCLE_data = read_rds(here('results/single_model/full_CCLE_expression_set_for_ML.
 
 CNV_data = read_rds(here('results/single_model/full_CCLE_CNV_set_for_ML.rds'))
 
-proteomics_data = read_csv(here('data/CCLE_data/CCLE_proteomics_imputed_wide.csv.gz')) %>%
+proteomics_data = read_rds(here('results/single_model/CCLE_proteomics_imputed_wide.rds')) %>%
 	select(-CCLE_cell_line_name,-tenplex_number) %>% 
 	rename_with( ~ paste0("prot_", .x), -DepMap_ID)
 
