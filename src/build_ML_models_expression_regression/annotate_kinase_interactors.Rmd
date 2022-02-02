@@ -1,0 +1,80 @@
+---
+title: "Annotate Kinase Interactors"
+author: "Matthew Berginski"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(DarkKinaseTools)
+
+knitr::opts_knit$set(root.dir = here())
+```
+
+```{r}
+full_model_data_set_500feat <- readRDS(here("results/single_model_expression_regression/full_model_data_set_500feat.rds"))
+
+string_data = read_delim(here('data/STRING/9606.protein.links.v11.5.txt.gz')) %>%
+	filter(combined_score >= 700) %>%
+	separate(protein1, into=c(NA,"ENSP_prot1"), sep = "\\.") %>%
+	separate(protein2, into=c(NA,"ENSP_prot2"), sep = "\\.")
+
+ensembl <- biomaRt::useEnsembl(biomart = "genes", dataset = "hsapiens_gene_ensembl")
+hgnc_to_ENSP = biomaRt::getBM(attributes = c('hgnc_symbol','ensembl_peptide_id'), mart = ensembl)
+```
+
+```{r}
+model_features = data.frame(temp = names(full_model_data_set_500feat)) %>%
+	separate(temp, into = c("type",'hgnc'), sep = "_") %>%
+	separate_rows(hgnc,sep = ";") %>%
+	filter(!is.na(hgnc), hgnc != "viability", hgnc != "id", hgnc != "conc") %>%
+	identity()
+
+
+model_features_interact = model_features %>% 
+	left_join(hgnc_to_ENSP, by=c('hgnc'='hgnc_symbol')) %>%
+	#the STRING data file has both protein interactions directions listed, so we
+	#only need to join against protein 1 to the full interaction list.
+	# http://version10.string-db.org/help/faq/
+	left_join(string_data, by=c('ensembl_peptide_id' = 'ENSP_prot1')) %>%
+	filter(ensembl_peptide_id != '', !is.na(ENSP_prot2)) %>%
+	identity()
+
+model_features_act = model_features_interact %>%
+	filter(type == "act")
+
+model_features_exp_direct_act = model_features_interact %>%
+	filter(type == "exp") %>%
+	left_join(model_features_act %>%
+							select(hgnc,ensembl_peptide_id) %>%
+							unique() %>%
+							rename(act_hgnc = hgnc),
+						by = c('ENSP_prot2' = "ensembl_peptide_id")) %>%
+	filter(!is.na(act_hgnc))
+
+model_features_direct_count = model_features_exp_direct_act %>%
+	group_by(hgnc) %>%
+	count(name = "direct_count")
+	
+all_kinase_id = all_kinases %>%
+	select(symbol, class) %>%
+	left_join(hgnc_to_ENSP, by=c('symbol' = 'hgnc_symbol'))
+
+model_features_exp_kinase_interact = model_features_interact %>%
+	filter(type == "exp") %>%
+	left_join(all_kinase_id, by = c('ENSP_prot2' = "ensembl_peptide_id")) %>%
+	filter(!is.na(class))
+
+model_features_exp_kinase_count = model_features_exp_kinase_interact %>%
+	group_by(hgnc) %>%
+	count(name = "kinase_count")
+
+model_features = model_features %>%
+	filter(type == "exp") %>%
+	left_join(model_features_direct_count) %>%
+	left_join(model_features_exp_kinase_count)
+
+write_rds(model_features,here('results/single_model_expression_regression/expression_feature_interactors.rds'))
+```
