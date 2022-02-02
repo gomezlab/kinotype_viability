@@ -1,0 +1,191 @@
+---
+title: "Make Model Predictions"
+author: "Matthew Berginski"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(tidymodels)
+library(tictoc)
+
+knitr::opts_knit$set(root.dir = here())
+```
+
+```{r}
+klaeger_full_tidy = read_rds(here('results/klaeger_full_tidy.rds'))
+
+CCLE_data = read_rds(here('results/single_model/full_CCLE_expression_set_for_ML.rds'))
+```
+
+```{r}
+tic()
+
+rand_forest_model = read_rds(here('results/single_model_expression_regression/final_model_500feat.rds'))
+
+toc()
+```
+
+```{r}
+fill_in_activation <- function(pseudo_klaeger_data) {
+	missing_activation = crossing(
+		gene_name = unique(klaeger_full_tidy$gene_name)[! unique(klaeger_full_tidy$gene_name) %in% pseudo_klaeger_data$gene_name],
+		concentration_M = sort(unique(klaeger_full_tidy$concentration_M)),
+		relative_intensity = 1
+	)
+	
+	pseudo_klaeger_data_wide = pseudo_klaeger_data %>% 
+		bind_rows(missing_activation) %>%
+		mutate(act_gene_name = paste0("act_",gene_name)) %>%
+		select(-gene_name) %>%
+		pivot_wider(names_from = act_gene_name, values_from = relative_intensity)
+}
+
+CK2_inhib_pseudo_k = tribble(
+	~gene_name,~concentration_M,~relative_intensity,
+	"CSNK2A2",0e+00,1,
+	"CSNK2A2",3e-09,0.9,
+	"CSNK2A2",1e-08,0.75,
+	"CSNK2A2",3e-08,0.5,
+	"CSNK2A2",1e-07,0.3,
+	"CSNK2A2",3e-07,0.25,
+	"CSNK2A2",1e-06,0.2,
+	"CSNK2A2",3e-06,0.2,
+	"CSNK2A2",3e-05,0.2,
+	"CSNK2A1;CSNK2A3",0e+00,1,
+	"CSNK2A1;CSNK2A3",3e-09,0.9,
+	"CSNK2A1;CSNK2A3",1e-08,0.75,
+	"CSNK2A1;CSNK2A3",3e-08,0.5,
+	"CSNK2A1;CSNK2A3",1e-07,0.3,
+	"CSNK2A1;CSNK2A3",3e-07,0.25,
+	"CSNK2A1;CSNK2A3",1e-06,0.2,
+	"CSNK2A1;CSNK2A3",3e-06,0.2,
+	"CSNK2A1;CSNK2A3",3e-05,0.2,
+)
+
+PIP4K2C_inhib_pseudo_k = tribble(
+	~gene_name,~concentration_M,~relative_intensity,
+	"PIP4K2C",0e+00,1,
+	"PIP4K2C",3e-09,1,
+	"PIP4K2C",1e-08,0.95,
+	"PIP4K2C",3e-08,0.9,
+	"PIP4K2C",1e-07,0.65,
+	"PIP4K2C",3e-07,0.35,
+	"PIP4K2C",1e-06,0.12,
+	"PIP4K2C",3e-06,0.05,
+	"PIP4K2C",3e-05,0,
+)
+
+CAMKK2_inhib_pseudo_k = tribble(
+	~gene_name,~concentration_M,~relative_intensity,
+	"CAMKK2",0e+00,1,
+	"CAMKK2",3e-09,1,
+	"CAMKK2",1e-08,1,
+	"CAMKK2",3e-08,1,
+	"CAMKK2",1e-07,0.95,
+	"CAMKK2",3e-07,0.80,
+	"CAMKK2",1e-06,0.6,
+	"CAMKK2",3e-06,0.10,
+	"CAMKK2",3e-05,0,
+)
+
+DYRK1B_inhib_pseudo_k = tribble(
+	~gene_name,~concentration_M,~relative_intensity,
+	"DYRK1B",0e+00,1,
+	"DYRK1B",3e-09,1,
+	"DYRK1B",1e-08,0.9,
+	"DYRK1B",3e-08,0.8,
+	"DYRK1B",1e-07,0.6,
+	"DYRK1B",3e-07,0.3,
+	"DYRK1B",1e-06,0.10,
+	"DYRK1B",3e-06,0,
+	"DYRK1B",3e-05,0,
+)
+
+neg_ctrl = tribble(
+	~gene_name,~concentration_M,~relative_intensity,
+)
+
+DK_drug_set = bind_rows(
+	fill_in_activation(CK2_inhib_pseudo_k) %>% mutate(drug = "SGC-CK2-1 - CSNK2A2"),
+	fill_in_activation(PIP4K2C_inhib_pseudo_k) %>% mutate(drug = "BI00048423 - PIP4K2C"),
+	fill_in_activation(CAMKK2_inhib_pseudo_k) %>% mutate(drug = "SGC-CAMKK2-1 - CAMKK2"),
+	fill_in_activation(DYRK1B_inhib_pseudo_k) %>% mutate(drug = "BI00036838 - DYRK1B"),
+	fill_in_activation(neg_ctrl) %>% mutate(drug = "Neg Ctrl"),
+)
+
+cell_line_cross = crossing(
+	DepMap_ID = unique(CCLE_data$DepMap_ID),
+	drug = unique(DK_drug_set$drug)
+) %>% left_join(DK_drug_set)
+
+
+data_for_model = cell_line_cross %>%
+	select(DepMap_ID,drug,concentration_M,any_of(names(rand_forest_model$pre$mold$predictors))) %>%
+	left_join(CCLE_data %>%
+							select(DepMap_ID,any_of(names(rand_forest_model$pre$mold$predictors)))) %>%
+	filter(concentration_M != 0)
+```
+
+```{r}
+model_predictions = data_for_model %>%
+	select(DepMap_ID,drug,concentration_M)
+
+model_predictions$viability = predict(rand_forest_model,data_for_model %>%
+																				mutate(klaeger_conc = NA, imputed_viability = NA, depmap_id = NA)) %>%
+	pull(.pred)
+
+# write_rds(rand_forest_model$fit$fit, here('results/single_model_expression_regression/only_model_fit.rds'), compress = 'gz')
+# 
+# rand_forest_model = read_rds(here('results/single_model_expression_regression/only_model_fit.rds'))
+# 
+# tic(); model_predictions = data_for_model %>% select(DepMap_ID,drug,concentration_M); model_predictions$viability = predict(rand_forest_model,data_for_model %>% mutate(klaeger_conc = NA, imputed_viability = NA, depmap_id = NA)) %>% pull(.pred); toc();
+
+model_pred_summary = model_predictions %>%
+	group_by(concentration_M, drug) %>%
+	summarise(mean_via = mean(viability),
+						conf.low = tidy(t.test(viability))$conf.low,
+						conf.high = tidy(t.test(viability))$conf.high,
+						quat_025 = quantile(viability,0.025),
+						quat_975 = quantile(viability,0.975))
+```
+
+```{r}
+sample_info = read_csv(here('data/CCLE_data/sample_info.csv.gz')) %>%
+	mutate(cell_line_name_extra = paste0(cell_line_name, "\n",lineage_subtype, "\n",lineage_sub_subtype))
+
+avail_lines = sample_info %>% 
+	filter(cell_line_name %in% c("SK-BR-3","MCF7","MDA-MB-436","HCC1806",
+															 "MDA-MB-231","BT-474","SUM-149PT","SUM-159PT",
+															 "SUM-229PE"))
+
+avail_lines = sample_info %>% 
+	filter(cell_line_name %in% c("HCC1806","SUM-159PT","MDA-MB-468"))
+
+model_pred_TNBC = model_predictions %>%
+	filter(DepMap_ID %in% avail_lines$DepMap_ID) %>%
+	left_join(avail_lines %>% select(DepMap_ID, cell_line_name)) %>%
+	# bind_rows(model_pred_summary %>%
+	# 						mutate(DepMap_ID = "Overall",cell_line_name = "Overall") %>%
+	# 						rename(viability = mean_via)) %>%
+	identity()
+```
+
+```{r}
+
+ggplot(model_pred_TNBC, aes(x=log10(concentration_M), y=viability)) +
+	geom_line(data = model_pred_summary, mapping = aes(y=mean_via), color='black') +
+	geom_ribbon(data = model_pred_summary, mapping = aes(ymin=quat_025, ymax=quat_975, y=mean_via), fill='grey70') +
+	geom_point(aes(color=cell_line_name),alpha=0.75) +
+	geom_line(aes(color=cell_line_name),alpha=0.75) +
+	labs(x="Log 10 Compound Concentration (M)", 
+			 y="Predicted Viability",
+			 color='') +
+	ylim(c(0,1)) +
+	BerginskiRMisc::theme_berginski() +
+	facet_wrap(~drug)
+
+ggsave(here('figures/DK_compound_predictions.png'))
+```
