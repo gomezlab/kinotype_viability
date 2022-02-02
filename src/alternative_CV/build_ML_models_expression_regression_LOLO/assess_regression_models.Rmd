@@ -1,0 +1,295 @@
+---
+title: "Assess Classification Models"
+author: "Matthew Berginski"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(tidymodels)
+library(ROCR)
+library(patchwork)
+library(tictoc)
+library(broom)
+library(gghighlight)
+library(Metrics)
+library(patchwork)
+
+knitr::opts_knit$set(root.dir = here())
+model_results = data.frame()
+
+```
+
+# Rand Forest Model Assessment
+
+```{r}
+tic()
+
+for (feat_count in c(100,200,300,400,500,1000,1500)) {
+	model_files = Sys.glob(here('results/single_model_expression_regression_LOLO/',
+															sprintf('rand_forest_%dfeat_notune_pred',feat_count),
+															"*"))
+	
+	for (this_file in model_files) {
+		these_cv_results = read_rds(this_file) %>%
+			mutate(fold_file = basename(this_file),
+						 feat_count = feat_count)
+		
+		model_results = bind_rows(
+			model_results,
+			data.frame(feat_count = feat_count,
+								 trees = 500,
+								 fold_file = basename(this_file),
+								 model_type = 'rand_forest_LOLO',
+								 rmse = sqrt(mean((these_cv_results$.pred - these_cv_results$target_viability)^2)),
+								 r2 = glance(summary(lm(these_cv_results$.pred ~ these_cv_results$target_viability)))$r.squared))
+	}
+	
+}
+toc()
+```
+
+```{r}
+tic()
+
+for (feat_count in c(100,200,300,400,500,1000,1500,2000)) {
+	model_files = Sys.glob(here('results/single_model_expression_regression_LOCO/',
+															sprintf('rand_forest_%dfeat_notune_pred',feat_count),
+															"*"))
+	
+	for (this_file in model_files) {
+		these_cv_results = read_rds(this_file) %>%
+			mutate(fold_file = basename(this_file),
+						 feat_count = feat_count)
+		
+		model_results = bind_rows(
+			model_results,
+			data.frame(feat_count = feat_count,
+								 trees = 500,
+								 fold_file = basename(this_file),
+								 model_type = 'rand_forest_LOCO',
+								 rmse = sqrt(mean((these_cv_results$.pred - these_cv_results$target_viability)^2)),
+								 r2 = glance(summary(lm(these_cv_results$.pred ~ these_cv_results$target_viability)))$r.squared))
+	}
+	
+}
+toc()
+```
+
+```{r}
+tic()
+
+for (feat_count in c(100,200,300,400,500,1000,1500,2000)) {
+	model_files = Sys.glob(here('results/single_model_expression_regression_1.2_exclude/',
+															sprintf('rand_forest_%dfeat_notune_pred',feat_count),
+															"*"))
+	
+	for (this_file in model_files) {
+		these_cv_results = read_rds(this_file) %>%
+			mutate(fold_file = basename(this_file),
+						 feat_count = feat_count)
+		
+		model_results = bind_rows(
+			model_results,
+			data.frame(feat_count = feat_count,
+								 trees = 500,
+								 fold_file = basename(this_file),
+								 model_type = 'rand_forest_rand_CV',
+								 rmse = sqrt(mean((these_cv_results$.pred - these_cv_results$target_viability)^2)),
+								 r2 = glance(summary(lm(these_cv_results$.pred ~ these_cv_results$target_viability)))$r.squared))
+	}
+	
+}
+toc()
+```
+
+```{r}
+tic()
+
+all_pred = data.frame()
+
+for (feat_count in c(100,200,300,400,500,600,700,800,900,1000,1500,2000)) {
+	model_files = Sys.glob(here('results/single_model_expression_regression_combo_10fold/',
+															sprintf('rand_forest_%dfeat_notune_pred',feat_count),
+															"*"))
+	
+	for (this_file in model_files) {
+		these_cv_results = read_rds(this_file) %>%
+			mutate(fold_file = basename(this_file),
+						 feat_count = feat_count)
+		
+		all_pred = bind_rows(all_pred,
+												 these_cv_results
+		)
+		
+		model_results = bind_rows(
+			model_results,
+			data.frame(feat_count = feat_count,
+								 trees = 500,
+								 fold_file = basename(this_file),
+								 model_type = 'rand_forest_combo_CV',
+								 rmse = sqrt(mean((these_cv_results$.pred - these_cv_results$target_viability)^2)),
+								 r2 = glance(summary(lm(these_cv_results$.pred ~ these_cv_results$target_viability)))$r.squared))
+	}
+	
+}
+toc()
+```
+
+```{r}
+# tic()
+# all_pred %>% ggplot(aes(x=target_viability,y=.pred, color = as.factor(feat_count))) +
+# 	geom_smooth(alpha=0.25) +
+# 	geom_abline(slope = 1, intercept = 0, color='black', alpha=0.5, linetype = 2)
+# toc()
+```
+
+```{r}
+tic()
+
+for (feat_count in c(100,200,300,400,500,1000,1500,2000)) {
+	model_files = Sys.glob(here('results/exclude_1.0_test/',
+															sprintf('rand_forest_%dfeat_notune_pred',feat_count),
+															"*"))
+	
+	for (this_file in model_files) {
+		these_cv_results = read_rds(this_file) %>%
+			mutate(fold_file = basename(this_file),
+						 feat_count = feat_count)
+		
+		all_pred = bind_rows(all_pred,
+												 these_cv_results)
+		
+		model_results = bind_rows(
+			model_results,
+			data.frame(feat_count = feat_count,
+								 trees = 500,
+								 fold_file = basename(this_file),
+								 model_type = 'rand_forest_combo_CV_exc_1.0',
+								 rmse = sqrt(mean((these_cv_results$.pred - these_cv_results$target_viability)^2)),
+								 r2 = glance(summary(lm(these_cv_results$.pred ~ these_cv_results$target_viability)))$r.squared))
+	}
+	
+}
+toc()
+```
+
+```{r}
+model_summary = model_results %>% 
+	group_by(feat_count,model_type) %>% 
+	nest() %>%
+	mutate(rmse = map(data, ~ tidy(t.test(.x$rmse)))) %>%
+	mutate(r2 = map(data, ~ tidy(t.test(.x$r2)))) %>%
+	unnest(cols=c(rmse,r2),names_sep = "_") %>%
+	select(feat_count,r2_estimate,rmse_estimate,everything())
+```
+
+# Naive Average Model
+
+```{r}
+tic()
+fold_ids = read_rds(here('results/single_model_expression_regression_LOLO/CV_split_row_nums.rds'))
+
+PRISM_klaeger_imputed = read_rds(here('results/PRISM_klaeger_imputed_tidy_1.2_exclude.rds'))
+
+CCLE_data = read_rds(here('results/single_model/full_CCLE_expression_set_for_ML.rds'))
+
+PRISM_klaeger_imputed = PRISM_klaeger_imputed %>%
+	filter(depmap_id %in% CCLE_data$DepMap_ID) %>%
+	ungroup()
+
+CV_aver_eff = data.frame()
+
+for (this_fold_id in unique(fold_ids)) {
+	aver_eff = PRISM_klaeger_imputed %>%
+		slice(which(fold_ids != this_fold_id)) %>%
+		group_by(drug) %>%
+		summarise(aver_via = mean(imputed_viability)) %>%
+		ungroup()
+	
+	CV_aver_eff = bind_rows(
+		CV_aver_eff,
+		PRISM_klaeger_imputed %>%
+			ungroup() %>%
+			slice(which(fold_ids == this_fold_id)) %>%
+			left_join(aver_eff, by=c('drug'))
+	)
+}
+
+naive_average_r2 = cor(CV_aver_eff$imputed_viability,CV_aver_eff$aver_via)^2
+naive_average_rmse = rmse(CV_aver_eff$imputed_viability,CV_aver_eff$aver_via)
+toc()
+```
+
+# Figures
+
+```{r}
+r2_plot = ggplot(model_summary, 
+								 aes(y=r2_estimate,x=feat_count, color=model_type, shape=model_type)) + 
+	geom_hline(aes(yintercept = naive_average_r2), linetype = 2, alpha = 0.5) +
+	geom_point(size=2) + 
+	# geom_errorbar(aes(ymin=r2_conf.low,ymax=r2_conf.high)) +
+	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+	labs(x="Number of Features",y="R\u00B2", color="",shape="") +
+	BerginskiRMisc::theme_berginski()
+
+rmse_plot = ggplot(model_summary, 
+									 aes(y=rmse_estimate,x=feat_count, color=model_type, shape=model_type)) + 
+	geom_hline(aes(yintercept = naive_average_rmse), linetype = 2, alpha = 0.5) +
+	geom_point(size=2) + 
+	# geom_errorbar(aes(ymin=rmse_conf.low,ymax=rmse_conf.high)) +
+	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+	labs(x="Number of Features",y="RMSE",color="",shape="") +
+	BerginskiRMisc::theme_berginski()
+
+# combined_plot = r2_plot + rmse_plot
+
+ggsave(here('figures/single_model_expression/CV_types_comparison.png'),r2_plot+rmse_plot, width=10,height=5)
+BerginskiRMisc::trimImage(here('figures/single_model_expression/CV_types_comparison.png'))
+notifysendR::notify_send("done with processing")
+```
+
+```{r}
+best_model_files = Sys.glob(here('results/exclude_1.0_test//',
+																 'rand_forest_500feat_notune_pred',
+																 "*"))
+
+best_model_results = best_model_files %>%
+	map(~read_rds(.x)) %>%
+	reduce(rbind)
+
+summary_text = paste0("R\u00B2: ",signif(glance(lm(best_model_results$target_viability ~ best_model_results$.pred))$r.squared,3), "\n",
+											"RMSE: ",signif(rmse(best_model_results$target_viability, best_model_results$.pred),3))
+
+ggplot(best_model_results, aes(x=target_viability,y=.pred)) +
+	stat_binhex(aes(fill=log10(..count..))) +
+	geom_abline(slope = 1, intercept = 0, color='black', alpha=0.5, linetype = 2) +
+	geom_smooth(color = 'red') +
+	scale_fill_viridis_c() +
+	labs(x="Actual Imputed Viability", y="Predicted Viability",fill="Log10\n# Values") +
+	geom_text(aes(x=-Inf,y=Inf,hjust=-0.1,vjust=1,label=summary_text), size=3.5, color='blue') +
+	BerginskiRMisc::theme_berginski() +
+	# xlim(c(0,1.2)) + ylim(c(0,1.2)) +
+	theme(aspect.ratio = 1:1, legend.margin=margin(0,0,0,0), legend.box.margin=margin(-10,-5,-10,-10))
+
+ggsave(here('figures/single_model_expression/500feat_combo_CV.png'), height=4, width=4)
+BerginskiRMisc::trimImage(here('figures/single_model_expression/500feat_combo_CV.png'))
+```
+
+```{r}
+# all_pred %>%
+# 	ggplot(aes(x=target_viability,y=.pred)) +
+# 	# stat_binhex(aes(fill=log10(..count..))) +
+# 	geom_abline(slope = 1, intercept = 0, color='black', alpha=0.5, linetype = 2) +
+# 	geom_smooth(color = 'red') +
+# 	scale_fill_viridis_c() +
+# 	labs(x="Actual Imputed Viability", y="Predicted Viability",fill="Log10\n# Values") +
+# 	geom_text(aes(x=-Inf,y=Inf,hjust=-0.1,vjust=1,label=summary_text), size=3.5, color='blue') +
+# 	BerginskiRMisc::theme_berginski() +
+# 	# xlim(c(0,1.2)) + ylim(c(0,1.2)) +
+# 	theme(aspect.ratio = 1:1, legend.margin=margin(0,0,0,0), legend.box.margin=margin(-10,-5,-10,-10)) +
+# 	facet_wrap(~feat_count)
+```
+
