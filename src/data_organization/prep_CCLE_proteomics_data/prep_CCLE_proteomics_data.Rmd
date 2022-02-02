@@ -11,19 +11,20 @@ library(here)
 library(vroom)
 library(tictoc)
 library(tidymodels)
+library(readxl)
 
-Sys.setenv("VROOM_CONNECTION_SIZE" = 131072 * 10)
+knitr::opts_knit$set(root.dir = here())
+
+# Sys.setenv("VROOM_CONNECTION_SIZE" = 131072 * 10)
 ```
 
 ```{r}
 #Reading in data 
 
-ccle_proteomics = vroom(here('data/CCLE_Data/Table_S2_Protein_Quant_Normalized.csv')) %>% 
+ccle_proteomics = read_excel(here('data/CCLE_data/Table_S2_Protein_Quant_Normalized.xlsx'),sheet=2) %>% 
   select(-contains("Column"))
 
 ccle_sample_info = vroom(here('data/CCLE_data/sample_info.csv'))
-
-LINCS_Kd_ic50_matrix = read_csv(here('data/LINCS_PRISM_Kd_ic50_matrix.csv'))
 ```
 
 ```{r}
@@ -54,16 +55,9 @@ ccle_proteomics_tidy = ccle_proteomics %>%
 	mutate("CCLE_cell_line_name" = str_sub(cell_line_tenplex_number, 1, -9)) %>% 
 	mutate("tenplex_number" = str_sub(cell_line_tenplex_number, -2)) %>% 
 	left_join(depmap_id_ccle_name_set, by = c("CCLE_cell_line_name" = "CCLE_Name")) %>% 
-	select(-cell_line_tenplex_number, -Gene_Symbol)
+	select(-cell_line_tenplex_number, -Gene_Symbol) %>%
+	mutate(normalized_protein_count = as.numeric(normalized_protein_count))
 
-ccle_proteomics_tidy_wide
-	pivot_wider(names_from = Uniprot_Acc, values_from = normalized_protein_count)
-
-write_csv(ccle_proteomics_tidy_wide, here('data/CCLE_Data/CCLE_proteomics_tidy_wide.csv.gz'))
-```
-
-
-```{r}
 #Imputing NAs: with per Protein value of 1 sd less than the minimum value
 
 NAs_per_cell_line = ccle_proteomics_tidy %>%  filter(is.na(normalized_protein_count)) %>% count(CCLE_cell_line_name)
@@ -76,57 +70,11 @@ sd_per_protein = ccle_proteomics_tidy %>%
 
 ccle_proteomics_tidy_imputed = ccle_proteomics_tidy %>% 
 	left_join(sd_per_protein, by = "Uniprot_Acc") %>% 
-	mutate(normalized_protein_count = if_else(is.na(normalized_protein_count), (min - sd), normalized_protein_count )) %>% 
+	mutate(normalized_protein_count = if_else(is.na(normalized_protein_count), (min - sd), normalized_protein_count)) %>% 
 	select(-min, -sd)
 
 ccle_proteomics_imputed_wide = ccle_proteomics_tidy_imputed %>% 
 	pivot_wider(names_from = Uniprot_Acc, values_from = normalized_protein_count)
 
-write_csv(ccle_proteomics_imputed_wide, here('data/CCLE_Data/CCLE_proteomics_imputed_wide.csv.gz'))
-  
+write_rds(ccle_proteomics_imputed_wide, here('results/single_model/CCLE_proteomics_imputed_wide.rds'), compress = 'gz')
 ```
-
-```{r}
-#EDA
-
-ggplot(ccle_proteomics_tidy) + geom_jitter(aes(x = Gene_Symbol, y = normalized_protein_count)) + geom_smooth(aes(x = Gene_Symbol, y = normalized_protein_count))
-
-PIK3RI = ccle_proteomics_tidy %>% filter(Gene_Symbol == "PIK3R1")  
-
-ggplot(PIK3RI, aes(x = CCLE_cell_line_name, y = normalized_protein_count, color = tenplex_number)) + geom_jitter() + geom_smooth(method = lm) + theme(axis.text.x = element_blank(), legend.position="none")
-
-ggplot(ccle_proteomics_tidy) + geom_histogram(aes(x = normalized_protein_count))
-```
-
-```{r}
-#cell line matches with PRISM 
-PRISM_cell_lines = LINCS_Kd_ic50_matrix %>% 
-	select(depmap_id) %>% 
-	unique()
-
-ccle_proteomics_cell_lines = ccle_proteomics_tidy %>% 
-	select(DepMap_ID) %>% 
-	unique()
-
-cell_line_matches = filter(PRISM_cell_lines, depmap_id %in% ccle_proteomics_cell_lines$DepMap_ID)
-
-no_match_cell_lines = PRISM_cell_lines %>% 
-	filter(!depmap_id %in% cell_line_matches$depmap_id)
-```
-
-```{r}
-#Protein Expression Features
-
-protein_expression_features = ccle_proteomics_tidy %>%
-  group_by(Gene_Symbol) %>%
-  summarise(mean = mean(normalized_protein_count), 
-            sd = sd(normalized_protein_count),
-            CV = sd/mean) %>%
-  mutate(mean_ptile = percent_rank(abs(mean))) %>%
-  arrange(desc(mean_ptile))
-
-mean(ccle_proteomics_tidy$normalized_protein_count, na.rm = TRUE)
-
-min(ccle_proteomics_tidy$normalized_protein_count, na.rm = TRUE)
-```
-
