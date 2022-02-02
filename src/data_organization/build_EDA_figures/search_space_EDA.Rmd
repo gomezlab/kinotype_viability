@@ -55,11 +55,46 @@ drug_line_compound_counts = PRISM_klaeger_imputed_tidy %>%
 					num_lines = 0) %>%
 	mutate(drug_id_num = 1:n())
 
+PRISM_repeats = read_rds(here('results/validation_results/HCC_PRISM_replication_screen.rds')) %>% 
+	select(compound, cell_line) %>% 
+	rename(drug = compound) %>%
+	unique() %>%
+	left_join(data.frame(depmap_id = c("ACH-000624"),
+											 cell_line = c("HCC-1806"))) %>%
+	select(-cell_line) %>%
+	mutate(tested_PRISM_rep = 2)
+
+validation = read_rds(here('results/validation_results/validation_screen.rds')) %>% 
+	select(compound, cell_line) %>% 
+	rename(drug = compound) %>%
+	unique() %>%
+	left_join(data.frame(depmap_id = c("ACH-000927","ACH-000624"),
+											 cell_line = c("BT-474","HCC1806"))) %>%
+	select(-cell_line) %>%
+	mutate(tested_val = 3)
+
+double_extrap = read_rds(here('results/validation_results/double_negative_validation_screen.rds')) %>% 
+	select(compound, cell_line) %>% 
+	rename(drug = compound) %>%
+	unique() %>%
+	left_join(data.frame(depmap_id = c("ACH-000017","ACH-001391"),
+											 cell_line = c("SKBR3","SUM159"))) %>%
+	select(-cell_line) %>%
+	mutate(tested_double = 4)
+
 all_combos = all_combos %>% 
 	left_join(already_tested) %>%
+	# left_join(PRISM_repeats) %>%
+	# left_join(validation) %>%
+	# left_join(double_extrap) %>%
+	# mutate(tested = ifelse(! is.na(tested_PRISM_rep), tested_PRISM_rep, tested)) %>%
+	# mutate(tested = ifelse(! is.na(tested_val), tested_val, tested)) %>%
+	# mutate(tested = ifelse(! is.na(tested_double), tested_double, tested)) %>%
+	# mutate(tested = ifelse(is.na(tested), 0, tested)) %>%
 	mutate(tested = ifelse(is.na(tested), 0, 1)) %>%
 	mutate(depmap_id = fct_relevel(depmap_id, as.character(cell_line_compound_counts$depmap_id))) %>%
 	mutate(drug = fct_relevel(drug, as.character(drug_line_compound_counts$drug))) %>%
+	# select(-tested_PRISM_rep,-tested_val,-tested_double) %>%
 	identity()
 ```
 
@@ -100,7 +135,7 @@ mean_not_tested = list(
 
 ggplot(all_combos_extra, aes(y=drug_id_num,x=depmap_id_num, fill = as.factor(tested), width=1, height=1)) +
 	geom_tile() +
-	scale_fill_manual(values = c("black","white","blue")) +
+	scale_fill_manual(values = c("black","white","green","red","brown")) +
 	theme_void() +
 	coord_fixed() +
 	theme(legend.position = "none") +
@@ -119,7 +154,7 @@ system(paste("convert -bordercolor blue -border 2",
 ```{r}
 ggplot(all_combos_extra, aes(y=drug_id_num,x=depmap_id_num, fill = as.factor(tested), width=1, height=1)) +
 	geom_tile() +
-	scale_fill_manual(values = c("white","black","blue")) +
+	scale_fill_manual(values = c("white","black","green","red","brown")) +
 	theme_void() +
 	coord_fixed() +
 	theme(legend.position = "none") +
@@ -133,4 +168,76 @@ BerginskiRMisc::trimImage(here('figures/single_model_expression/untested_feature
 system(paste("convert -bordercolor blue -border 2", 
 						 here('figures/single_model_expression/untested_feature_space_invert.png'),
 						 here('figures/single_model_expression/untested_feature_space_invert.png')))
+```
+
+# Adding Highlights for the Rest of the Figure?
+
+```{r}
+all_combos = crossing(
+	drug = unique(klaeger_full_tidy$drug),
+	depmap_id = unique(full_CCLE_expression_set_for_ML$DepMap_ID)
+) 
+
+PRISM_repeats = read_rds(here('results/validation_results/HCC_PRISM_replication_screen.rds')) %>% 
+	select(compound, cell_line) %>% 
+	rename(drug = compound) %>%
+	unique() %>%
+	left_join(data.frame(depmap_id = c("ACH-000624"),
+											 cell_line = c("HCC-1806"))) %>%
+	select(-cell_line) %>%
+	mutate(tested_PRISM_rep = 2)
+
+validation = read_rds(here('results/validation_results/validation_screen.rds')) %>% 
+	select(compound, cell_line) %>% 
+	rename(drug = compound) %>%
+	unique() %>%
+	left_join(data.frame(depmap_id = c("ACH-000927","ACH-000624"),
+											 cell_line = c("BT-474","HCC1806"))) %>%
+	select(-cell_line) %>%
+	mutate(tested_val = 3)
+
+double_extrap = read_rds(here('results/validation_results/double_negative_validation_screen.rds')) %>% 
+	select(compound, cell_line) %>% 
+	rename(drug = compound) %>%
+	unique() %>%
+	left_join(data.frame(depmap_id = c("ACH-000017","ACH-001391"),
+											 cell_line = c("SKBR3","SUM159"))) %>%
+	select(-cell_line) %>%
+	mutate(tested_double = 4)
+
+all_combos = all_combos %>% 
+	left_join(already_tested) %>%
+	left_join(PRISM_repeats) %>%
+	left_join(validation) %>%
+	left_join(double_extrap) %>%
+	mutate(tested = ifelse(! is.na(tested_PRISM_rep), tested_PRISM_rep, tested)) %>%
+	mutate(tested = ifelse(! is.na(tested_val), tested_val, tested)) %>%
+	mutate(tested = ifelse(! is.na(tested_double), tested_double, tested)) %>%
+	mutate(tested = ifelse(is.na(tested), 0, tested)) %>%
+
+	mutate(depmap_id = fct_relevel(depmap_id, as.character(cell_line_compound_counts$depmap_id))) %>%
+	mutate(drug = fct_relevel(drug, as.character(drug_line_compound_counts$drug))) %>%
+	select(-tested_PRISM_rep,-tested_val,-tested_double) %>%
+	identity()
+
+all_combos_extra = all_combos %>%
+	left_join(cell_line_compound_counts %>% select(depmap_id, depmap_id_num)) %>%
+	left_join(drug_line_compound_counts %>% select(drug, drug_id_num))
+
+ggplot(all_combos_extra, aes(y=drug_id_num,x=depmap_id_num, fill = as.factor(tested), width=1, height=1)) +
+	geom_tile() +
+	scale_fill_manual(values = c("white","black","green","red","brown")) +
+	theme_void() +
+	coord_fixed() +
+	theme(legend.position = "none") +
+	annotate("text",x=mean_tested$x, y=mean_tested$y, 
+					 label=paste0(signif(mean(all_combos_extra$tested),3)*100,"% Tested"), color='white') +
+	annotate("text",x=mean_not_tested$x, y=mean_not_tested$y, 
+					 label=paste0(signif(1-mean(all_combos_extra$tested),3)*100,"% Not Tested")) +
+	theme(legend.position = "none")
+ggsave(here('figures/single_model_expression/untested_feature_space_invert_highlight.png'), dpi = 300, height=229*0.005, width=1379*0.005)
+BerginskiRMisc::trimImage(here('figures/single_model_expression/untested_feature_space_invert_highlight.png'))
+system(paste("convert -bordercolor blue -border 2", 
+						 here('figures/single_model_expression/untested_feature_space_invert_highlight.png'),
+						 here('figures/single_model_expression/untested_feature_space_invert_highlight.png')))
 ```
