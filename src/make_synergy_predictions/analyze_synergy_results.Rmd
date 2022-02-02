@@ -1,0 +1,54 @@
+---
+title: "Analyze Synergy Data"
+author: "Matthew Berginski"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(tictoc)
+library(furrr)
+library(parallel)
+
+knitr::opts_knit$set(root.dir = here())
+```
+
+
+```{r}
+single_drug_via = bind_rows(
+	read_rds(here('results/single_model_expression_regression/model_predictions_1500feat.rds')) %>%
+		rename(viability = pred_via),
+	read_rds(here('results/PRISM_klaeger_imputed_tidy.rds')) %>%
+		rename(viability = imputed_viability, concentration_M = klaeger_conc))
+
+synergy_preds = read_rds(here('results/synergy_pred/per_cell_line/ACH-000017.rds'))
+
+this_line_single_drug = single_drug_via %>%
+	filter(depmap_id == unique(synergy_preds$DepMap_ID))
+```
+
+```{r}
+single_drug_naive = synergy_preds %>%
+	select(drug_1,drug_2,concentration_M_d1,concentration_M_d2) %>%
+	filter(concentration_M_d1 != 0, concentration_M_d2 != 0) %>% 
+	left_join(this_line_single_drug, by=c('drug_1' = 'drug', 'concentration_M_d1'='concentration_M')) %>%
+	rename(drug_1_via = viability) %>%
+	left_join(this_line_single_drug, by=c('drug_2' = 'drug', 'concentration_M_d2'='concentration_M')) %>%
+	rename(drug_2_via = viability) %>%
+	mutate(naive_pred = drug_1_via*drug_2_via)
+```
+
+```{r}
+synergy_comps = synergy_preds %>%
+	filter(concentration_M_d1 != 0, concentration_M_d2 != 0) %>%
+	left_join(single_drug_naive) %>%
+	mutate(pred_diff = via_pred - naive_pred)
+
+synergy_comps_summary = synergy_comps %>%
+	group_by(drug_1, drug_2) %>%
+	summarise(mean_pred_diff = mean(pred_diff),
+				 mean_pred = mean(via_pred),
+				 mean_naive = mean(naive_pred))
+```
