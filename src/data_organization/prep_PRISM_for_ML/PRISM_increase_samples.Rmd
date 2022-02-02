@@ -1,0 +1,40 @@
+---
+title: "PRISM Increase Samples"
+author: "Matthew Berginski"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+
+knitr::opts_knit$set(root.dir = here())
+```
+
+```{r}
+PRISM_klaeger_imputed_tidy <- readRDS(here("results/PRISM_klaeger_imputed_tidy.rds"))
+PRISM_klaeger_imputed_tidy_nofilt <- readRDS(here("results/PRISM_klaeger_imputed_tidy_nofilt.rds"))
+
+PRISM_model_set = PRISM_klaeger_imputed_tidy %>% select(depmap_id, drug) %>% unique() %>% mutate(combo = paste0(depmap_id,"-",drug))
+
+PRISM_increase_samples = PRISM_klaeger_imputed_tidy_nofilt %>%
+	mutate(combo = paste0(depmap_id,"-",drug)) %>%
+	filter(!combo %in% PRISM_model_set$combo)
+```
+
+```{r}
+max_samples = PRISM_increase_samples %>% 
+	filter(klaeger_conc == 3e-05)
+
+sample_sets = PRISM_increase_samples %>%
+	filter(combo == "ACH-000015-Bosutinib" | combo == "ACH-000054-BYL-719" | combo == "ACH-000013-Trametinib")
+
+ggplot(sample_sets, aes(x=log10(klaeger_conc),y=imputed_viability, color=combo)) + 
+	geom_line() + 
+	BerginskiRMisc::theme_berginski() + 
+	labs(x="Log10 Concentration (M)", y="Imputed Viability", color='')
+
+ggsave(here('figures/imputed_viability_EDA/sample_filtered_via.png'))
+BerginskiRMisc::trimImage(here('figures/imputed_viability_EDA/sample_filtered_via.png'))
+```
