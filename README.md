@@ -20,7 +20,7 @@ As for the overall organization of the code, there are three primary divisions:
 
 Before diving into the rest of the code, you should take a look at and run [`src/package_check.R`](src/package_check.R). This is a script that uses the pacman library to check for library installations and if missing installs them. It also installs two packages from github that I maintain ([DarkKinaseTools](https://github.com/IDG-Kinase/DarkKinaseTools) and [BerginskiRMisc](https://github.com/mbergins/BerginskiRMisc)). 
 
-I'll finish off this section by mentioning that I've only ever tested this code on Linux (Ubuntu) and the supercomputing cluster at UNC. I think a majority of the code will work on other platforms, but I haven't tested it.
+I've only ever tested this code on Linux (Ubuntu) and the supercomputing cluster at UNC. I think a majority of the code will work on other platforms, but I haven't tested it.
 
 # Data Organization Code
 
@@ -36,9 +36,11 @@ All the other script files in the [`data organization`](src/data_organaization) 
 
 ## Reproducibility
 
-I've made a simple script that runs the above scripts in sequence to produce all the files needed for the modelling effort. On my computer (Ryzen 7 5800x) it took about 3 minutes and used 4.7 GB of RAM.
+I've made a simple script that runs the above scripts in sequence to produce all the files needed for the modelling effort ([reproduce_data_org.R](`src/data_organization/reproduce_data_org.R`)). On my computer (Ryzen 7 5800x) it took about 3 minutes and used 4.7 GB of RAM.
 
 # Modeling Code
+
+As I mentioned above, all the modeling code is written using the tidymodels framework and each modeling attempt has two parts. The first part of the modeling code calculates the correlation coefficients between cell viability and each of the potential model features using the cross validation folds if to divide the data if requested. The second part of the modeling method then uses those correlation values and a given number of features to then build and test the model.
 
 ## Reproducibility
 
