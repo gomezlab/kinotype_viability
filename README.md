@@ -36,10 +36,12 @@ All the other script files in the [`data organization`](src/data_organaization) 
 
 ## Reproducibility
 
-I've made a simple script that runs the above scripts in sequence to produce all the data files needed for the modelling effort. On my computer (Ryzen 7 5800x) it took about 3 minutes and used 4.7 GB of RAM.
+I've made a simple script that runs the above scripts in sequence to produce all the files needed for the modelling effort. On my computer (Ryzen 7 5800x) it took about 3 minutes and used 4.7 GB of RAM.
 
 # Modeling Code
 
+## Reproducibility
+
 # Validation Data Code
 
-# Reproducibility
+## Reproducibility
