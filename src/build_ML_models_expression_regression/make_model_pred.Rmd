@@ -86,6 +86,38 @@ toc()
 ```
 
 ```{r}
+tic()
+if (file.exists(here('results/single_model_expression_regression/final_model_500feat_100trees.rds'))) {
+	rand_forest_model_100tree = read_rds(here('results/single_model_expression_regression/final_model_500feat_100trees.rds'))
+} else {
+	
+	PRISM_klaeger_recipe = recipe(target_viability ~ ., data_for_model_production) %>%
+		update_role(-starts_with("act_"),
+								-starts_with("exp_"),
+								-starts_with("dep_"),
+								-starts_with("target_"), new_role = "id variable") %>%
+		prep()
+	
+	rand_forest_spec <- rand_forest(trees = 100) %>% 
+		set_engine("ranger", num.threads = parallel::detectCores() - 2,importance = "impurity") %>%
+		set_mode("regression")
+	
+	rand_forest_wf <- workflow() %>%
+		add_model(rand_forest_spec) %>%
+		add_recipe(PRISM_klaeger_recipe)
+	
+	rand_forest_model_100tree = rand_forest_wf %>%
+		fit(data = data_for_model_production) %>%
+		write_rds(here('results/single_model_expression_regression/final_model_500feat_100trees.rds'), compress = 'gz')
+	
+	rand_forest_model_100tree %>% 
+		extract_fit_parsnip() %>% 
+		write_rds(here('results/single_model_expression_regression/model_only_500feat_100trees.rds'), compress = 'gz')
+}
+toc()
+```
+
+```{r}
 model_predictions = data.frame()
 
 tic()
