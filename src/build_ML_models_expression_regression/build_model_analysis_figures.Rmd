@@ -27,9 +27,8 @@ gene_classifications = read_csv(here('data/KlaegerScience2017/manual_gene_labels
 exp_interactor_type = read_rds(here('results/single_model_expression_regression/expression_feature_interactors.rds')) %>%
 	mutate(Variable = paste0(type,"_",hgnc)) %>%
 	mutate(interaction = case_when(
-		direct_count >= 1 ~ "Direct",
-		kinase_count >= 1 ~ "Kinase",
-		T ~ "Neither"
+		direct_count >= 1 ~ "Activation\nInteractor",
+		T ~ "Noninterator"
 	))
 ```
 
@@ -66,8 +65,9 @@ ggplot(all_importance %>%
 			 	slice_tail(n = 25), 
 			 aes(x=Importance,y=Variable, fill = interaction)) + 
 	geom_col() +
-	labs(y='',fill='Interaction\nType',x='Feature Importance') +
+	labs(y='',fill='',x='Feature Importance') +
 	BerginskiRMisc::theme_berginski() +
+	theme(legend.margin=margin(l = -20)) +
 	scale_fill_brewer(type='qual', palette = "Set2")
 ggsave(here('figures/single_model_expression/top_25_exp_VIP.png'),width=5,height=3.75)
 BerginskiRMisc::trimImage(here('figures/single_model_expression/top_25_exp_VIP.png'))
@@ -80,4 +80,10 @@ ggplot(all_importance, aes(x=feature_type,y=Importance)) +
 	BerginskiRMisc::theme_berginski()
 ggsave(here('figures/single_model_expression/importance_box.png'),width=2,height=3.75)
 BerginskiRMisc::trimImage(here('figures/single_model_expression/importance_box.png'))
+```
+
+```{r}
+summary(lm(Importance ~ class + 0, all_importance %>% filter(feature_type == "Activation")))
+
+summary(lm(Importance ~ feature_type, all_importance))
 ```
