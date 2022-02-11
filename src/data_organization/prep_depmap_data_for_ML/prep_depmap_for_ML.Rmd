@@ -9,11 +9,11 @@ output: github_document
 library(tidyverse)
 library(here)
 library(tictoc)
-library(tidymodels)
-library(patchwork)
 
 knitr::opts_knit$set(root.dir = here())
 Sys.setenv("VROOM_CONNECTION_SIZE" = 131072 * 10)
+
+dir.create(here('results/single_model'), showWarnings = F)
 ```
 
 # Loading Depmap Data Sets
@@ -42,7 +42,7 @@ depmap_missing_lines_data = crispr_depmap %>%
 #case I need to run this again.
 stopifnot(dim(depmap_missing_lines_data)[1] == 10)
 
-depmap_data_filt = depmap_data %>%
+depmap_data_filt = crispr_depmap %>%
 	filter(! DepMap_ID %in% depmap_missing_lines_data$DepMap_ID) %>%
 	write_rds(here('results/single_model/full_depmap_for_ML.rds'), compress = 'gz')
 ```
