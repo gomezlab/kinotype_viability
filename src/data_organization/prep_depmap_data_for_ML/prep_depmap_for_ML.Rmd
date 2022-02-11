@@ -38,7 +38,7 @@ depmap_missing_lines_data = crispr_depmap %>%
 	summarise(na_count = sum(is.na(depmap_score))) %>% 
 	filter(na_count > 0)
 
-#Also adding a quick check here for the filtered lines staying at 4, just in
+#Also adding a quick check here for the filtered lines staying at 10, just in
 #case I need to run this again.
 stopifnot(dim(depmap_missing_lines_data)[1] == 10)
 
