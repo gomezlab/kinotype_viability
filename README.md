@@ -64,13 +64,18 @@ The other files in this folder are related to models not in the paper or code to
 
 ### Other Modeling Code
 
+All of the other modeling code in the paper has the same backbone as the kinase activation and gene expression model. As far as the folder names for the modeling code, in general I tried to make it clear what data sources or how they were modified along with some indication of the target of the modeling effort. Some of the naming choices are also related to differentiating a folder from a similar modeling effort that has since been removed. For example, at the beginning of this project I started off building models to classify whether a cell viability value was above or below the median, but this was quickly discarded when it became clear that regression would work reasonablely well. Also, since kinase activation state is so important for the models, I don't explicity call that data type out in the folder names as it was always included by default.
 
+I've tried many variations on ways to modify the cross validation strategy, data sources used and methods for improving the data. Only two of these feature prominently in the paper:
+
+* [`build_ML_models_expression_regression`](src/build_ML_models_expression_regression): This is the code detailed in the sample modeling code section, it builds and tests the kinase activation and gene expression model.
+* [`build_ML_models_all_data_regression`](src/build_ML_models_all_data_regression): This code uses all the data types (gene expression, CNV, proteomics and CRISPR-KO) for modeling. These results are included in the 
 
 ### Reproducibility
 
 All of the [`send_feat_cor_cmd.R`]() and [`send_model_cmd.R`]() should reproduce the model runs for each of the modeling code sections described above. I thought about writing a single script to run each of these, but since I suspect that anyone will likely need to modify these files to get them to work in their local environment, I haven't written it. If there is demand for such a file, I'll be glad to give it a shot. 
 
-Since I ran all of this code on UNC's supercomputer, I don't have a very precise idea of how long it would take to completely reproduce the CV model runs. As a test, I ran one of the CV folds through all of the modeling types used in the paper for the activation and expression model. It took 3.6 hours and the RAM usage peaked at 36 GB. Extrapolating that out means about 36 hours of computational time and you should probably have 64 GB of RAM to be safe.
+Since I ran all of this code on UNC's supercomputer, I don't have a very precise idea of how long it would take to completely reproduce the CV model runs. As a test, I ran one of the CV folds through all of the modeling types used in the paper for the activation and expression model. It took 3.6 hours and the RAM usage peaked at 36 GB. Extrapolating that out means about 36 hours of computational time (8 cores on a Ryzen 7 5800x) and you should probably have 64 GB of RAM to be safe.
 
 ## Validation Data Code
 
