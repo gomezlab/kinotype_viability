@@ -6,7 +6,7 @@ Berginski ME, Joisa C, et al. In process
 
 ## Audience
 
-This file is written as though I were trying to give an overview of the computational side of this work to an interested grad student. You probably have 1-2 years of experience writing R code and associated computing effort, including interacting with the command line and high-throughput computing resources. If this doesn't describe you, don't despair, you can probably still get something out of this repository.
+This file is written to give an overview of the computational side of this work to an interested grad student. You probably have 1-2 years of experience writing R code and associated computing effort, including interacting with the command line and high-throughput computing resources. If this doesn't describe you, don't despair, you can probably still get something out of this repository.
 
 ## Overall Code Organization, Philosophy and Prerequisites
 
