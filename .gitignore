@@ -5,4 +5,5 @@
 
 data
 results
-figures
+figures/klaeger_viability_EDA
+figures/klaeger_visualizations

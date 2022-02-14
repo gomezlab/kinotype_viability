@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="2548.0618"
+   height="1022.5161"
+   viewBox="0 0 674.17466 270.54074"
+   version="1.1"
+   id="svg8"
+   inkscape:version="1.1.1 (3bf5ae0d25, 2021-09-20)"
+   sodipodi:docname="feat_selection.svg"
+   inkscape:export-filename="/home/mbergins/Documents/Projects/PRISM_perturbations/figures/feature_selection_expression/feat_selection.png"
+   inkscape:export-xdpi="96"
+   inkscape:export-ydpi="96"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:xlink="http://www.w3.org/1999/xlink"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <defs
+     id="defs2" />
+  <sodipodi:namedview
+     id="base"
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1.0"
+     inkscape:pageopacity="1"
+     inkscape:pageshadow="2"
+     inkscape:zoom="1.081214"
+     inkscape:cx="1274.0309"
+     inkscape:cy="510.99967"
+     inkscape:document-units="px"
+     inkscape:current-layer="layer1"
+     inkscape:document-rotation="0"
+     showgrid="false"
+     units="px"
+     inkscape:window-width="3840"
+     inkscape:window-height="2123"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     fit-margin-top="0"
+     fit-margin-left="0"
+     fit-margin-right="0"
+     fit-margin-bottom="0"
+     inkscape:pagecheckerboard="0" />
+  <metadata
+     id="metadata5">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type
+           rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1"
+     transform="translate(3.7252903e-8,0.04301737)">
+    <image
+       xlink:href="feature_cor_histograms.png"
+       y="116.75543"
+       x="13.404888"
+       id="image849"
+       preserveAspectRatio="none"
+       height="153.74228"
+       width="327.0209" />
+    <text
+       xml:space="preserve"
+       style="font-size:21.1667px;line-height:1.25;font-family:'Liberation Sans';-inkscape-font-specification:'Liberation Sans';letter-spacing:0px;word-spacing:0px;stroke-width:0.264583"
+       x="-0.041341212"
+       y="14.519424"
+       id="text855"><tspan
+         sodipodi:role="line"
+         id="tspan853"
+         x="-0.041341212"
+         y="14.519424"
+         style="font-size:21.1667px;stroke-width:0.264583">A</tspan><tspan
+         sodipodi:role="line"
+         x="-0.041341212"
+         y="40.977798"
+         style="font-size:21.1667px;stroke-width:0.264583"
+         id="tspan857" /></text>
+    <text
+       xml:space="preserve"
+       style="font-size:21.0186px;line-height:1.25;font-family:'Liberation Sans';-inkscape-font-specification:'Liberation Sans';letter-spacing:0px;word-spacing:0px;stroke-width:0.262732"
+       x="343.9931"
+       y="14.460576"
+       id="text855-3"><tspan
+         sodipodi:role="line"
+         x="343.9931"
+         y="14.460576"
+         style="font-size:21.0186px;stroke-width:0.262732"
+         id="tspan857-0">B</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-size:21.1667px;line-height:1.25;font-family:'Liberation Sans';-inkscape-font-specification:'Liberation Sans';letter-spacing:0px;word-spacing:0px;stroke-width:0.264583"
+       x="-1.0748715"
+       y="131.5349"
+       id="text855-1"><tspan
+         sodipodi:role="line"
+         id="tspan853-2"
+         x="-1.0748715"
+         y="131.5349"
+         style="font-size:21.1667px;stroke-width:0.264583">C</tspan><tspan
+         sodipodi:role="line"
+         x="-1.0748715"
+         y="157.99327"
+         style="font-size:21.1667px;stroke-width:0.264583"
+         id="tspan857-9" /></text>
+    <image
+       xlink:href="sample_expression_cor_hex.png"
+       y="2.650054e-05"
+       x="358.14484"
+       id="image1020"
+       preserveAspectRatio="none"
+       height="104.90066"
+       width="316.02985" />
+    <image
+       xlink:href="sample_activation_cor_hex.png"
+       y="-0.043017365"
+       x="14.035341"
+       id="image1064"
+       preserveAspectRatio="none"
+       height="104.71097"
+       width="321.26794" />
+    <image
+       xlink:href="selection_order.png"
+       y="117.8501"
+       x="369.73703"
+       id="image1092"
+       preserveAspectRatio="none"
+       height="151.92416"
+       width="303.84833" />
+    <text
+       xml:space="preserve"
+       style="font-size:21.1667px;line-height:1.25;font-family:'Liberation Sans';-inkscape-font-specification:'Liberation Sans';letter-spacing:0px;word-spacing:0px;stroke-width:0.264583"
+       x="355.46399"
+       y="131.31786"
+       id="text855-1-0"><tspan
+         sodipodi:role="line"
+         id="tspan853-2-8"
+         x="355.46399"
+         y="131.31786"
+         style="font-size:21.1667px;stroke-width:0.264583">D</tspan><tspan
+         sodipodi:role="line"
+         x="355.46399"
+         y="157.77623"
+         style="font-size:21.1667px;stroke-width:0.264583"
+         id="tspan857-9-8" /></text>
+  </g>
+</svg>

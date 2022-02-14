@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="2549.8848"
+   height="641.65533"
+   viewBox="0 0 674.65699 169.77131"
+   version="1.1"
+   id="svg8"
+   inkscape:version="1.1.1 (3bf5ae0d25, 2021-09-20)"
+   sodipodi:docname="all_data_model.svg"
+   inkscape:export-filename="/home/mbergins/Documents/Projects/PRISM_perturbations/figures/single_model_all_data_regression/all_data_model.png"
+   inkscape:export-xdpi="96"
+   inkscape:export-ydpi="96"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:xlink="http://www.w3.org/1999/xlink"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <defs
+     id="defs2" />
+  <sodipodi:namedview
+     id="base"
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1.0"
+     inkscape:pageopacity="1"
+     inkscape:pageshadow="2"
+     inkscape:zoom="0.85653588"
+     inkscape:cx="1233.4568"
+     inkscape:cy="552.22439"
+     inkscape:document-units="px"
+     inkscape:current-layer="layer1"
+     inkscape:document-rotation="0"
+     showgrid="false"
+     units="px"
+     inkscape:window-width="3742"
+     inkscape:window-height="2082"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:pagecheckerboard="0"
+     showguides="false"
+     fit-margin-top="0"
+     fit-margin-left="0"
+     fit-margin-right="0"
+     fit-margin-bottom="0" />
+  <metadata
+     id="metadata5">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type
+           rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1">
+    <text
+       xml:space="preserve"
+       style="font-size:21.1667px;line-height:1.25;font-family:'Liberation Sans';-inkscape-font-specification:'Liberation Sans';letter-spacing:0px;word-spacing:0px;stroke-width:0.264583"
+       x="-0.041341145"
+       y="14.562442"
+       id="text841"><tspan
+         sodipodi:role="line"
+         id="tspan839"
+         x="-0.041341145"
+         y="14.562442"
+         style="font-size:21.1667px;stroke-width:0.264583">A</tspan></text>
+    <image
+       xlink:href="../feature_selection_all/selection_order.png"
+       y="2.3283064e-08"
+       x="14.035341"
+       id="image853"
+       preserveAspectRatio="none"
+       height="159.75017"
+       width="303.80435" />
+    <text
+       xml:space="preserve"
+       style="font-size:21.1667px;line-height:1.25;font-family:'Liberation Sans';-inkscape-font-specification:'Liberation Sans';letter-spacing:0px;word-spacing:0px;stroke-width:0.264583"
+       x="321.85886"
+       y="14.562442"
+       id="text841-8"><tspan
+         sodipodi:role="line"
+         id="tspan839-8"
+         x="321.85886"
+         y="14.562442"
+         style="font-size:21.1667px;stroke-width:0.264583">B</tspan></text>
+    <image
+       width="339.79636"
+       height="169.7713"
+       preserveAspectRatio="none"
+       xlink:href="model_comparison.png"
+       id="image259"
+       x="334.86066"
+       y="2.3283064e-08" />
+  </g>
+</svg>
