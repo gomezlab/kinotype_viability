@@ -48,12 +48,23 @@ As I mentioned above, all the modeling code is written using the tidymodels fram
 
 ### Sample Modeling Code
 
+All of these files can be found in [`src/build_ML_models_expression_regression`](src/build_ML_models_expression_regression). If you find my folding naming scheme inscrutable, I'll describe it in the other modeling code section. 
+
 * [`get_feat_cor.R`](src/build_ML_models_expression_regression/get_feat_cor.R): This script reads in the data set from the data organization section and finds the correlations between cell viability and each of the features. In the case of this file, it only reads and searches the Klaeger activation states and gene expression, but this varies depending on the data sets the model includes. The feature correlation calculations are calculated in a cross validation aware fashion. This script also contains the code for making the cross validation fold assignments and building the full data file needed to make the final model that includes all of the data. Normally, with new model testing, I run this code once to make the CV fold assignments (saved to disk) to ensure that I don't accidentally use multiple cross validation assignments. You might be wondering why I don't just the built in CV code in tidymodels and it's because tidymodels doesn't support out of the differing feature selection across folds and this also makes it possible to run all the CV folds independently on the supercomputer.
 * [`build_random_forest_models_no_tune.R`](src/build_ML_models_expression_regression/build_random_forest_models_no_tune.R): Hopefully you will forgive my overly wordy file names, but as you can hopefully guess, this script builds a random forest model for CV testing without tuning. It takes two parameters, the cross validation fold ID to run on and the number of features to include in the model, although the code will also run without specifying any parameter with a default of 100 features and CV fold ID 1. The other model types ([`XGBoost`](src/build_ML_models_expression_regression/build_xgboost_models_no_tune.R) and [`linear regression`](src/build_ML_models_expression_regression/build_linear_models.R)) get their own files that look very similar to this one (thanks tidymodels).
 
-There are two other smaller scripts used to make the modeling run [`send_feat_cor_cmd.R`](src/build_ML_models_expression_regression/send_feat_cor_cmd.R) and [`send_model_cmd.R`](src/build_ML_models_expression_regression/send_model_cmd.R). These scripts simply build the commands needed to run the feature correlations and modeling runs and send them into the computational queue on the supercomputer at UNC. If you have access to a slurm cluster these will probably work, but if not you can use them as a template to run your models locally or on whatever supercomputing system you use.
+There are two other smaller scripts used to automate cycling through the CV folds and modeling types [`send_feat_cor_cmd.R`](src/build_ML_models_expression_regression/send_feat_cor_cmd.R) and [`send_model_cmd.R`](src/build_ML_models_expression_regression/send_model_cmd.R). These scripts simply build the commands needed to run the feature correlations and modeling runs and send them into the computational queue on the supercomputer at UNC. If you have access to a slurm cluster these will probably work, but if not you can use them as a template to run your models locally or on whatever supercomputing system you use.
+
+I'll point out the purpose of a few of the other files in the folder:
+
+* [`make_model_pred.Rmd`](src/build_ML_models_expression_regression/make_model_pred.Rmd): This code takes in the full data set and builds the final model used to make predictions for the rest of the data outside the model. It also includes a section to build a simplier model that we are going to use a power a webapp.
+* [`annotate_kinase_interactors.Rmd`](src/build_ML_models_expression_regression/annotate_kinase_interactors.Rmd): This code uses the STRING database to annotate which expression features interact with kinases for use in interpretting the expression modeling features.
+
+The other files in this folder are related to models not in the paper or code to build the figures in the paper. I'll get to figure reproduction at the end of this document.
 
 ### Other Modeling Code
+
+
 
 ### Reproducibility
 
@@ -64,3 +75,7 @@ Since I ran all of this code on UNC's supercomputer, I don't have a very precise
 ## Validation Data Code
 
 ### Reproducibility
+
+
+## Figure Production Code
+
