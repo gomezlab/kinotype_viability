@@ -4,9 +4,13 @@ This repository contains the source code used to organize the data and build mod
 
 Berginski ME, Joisa C, et al. In process
 
+## Audience
+
+This file is written as though I were trying to give an overview of the computational side of this work to an interested grad student. You probably have 1-2 years of experience writing R code and associated computing effort, including interacting with the command line and high-throughput computing resources. If this doesn't describe you, don't despair, you can probably still get something out of this repository.
+
 ## Overall Code Organization, Philosophy and Prerequisites
 
-Nearly all of the code in this respository is written in R, almost all using tidyverse-esque idioms. All of the computational modeling code uses the tidymodel framework to faciliate model testing and usage. If you want to get a full handle on this codebase and these concepts are a bit unknown, you would be well served to work through [R for Data Science](https://r4ds.had.co.nz/) and the [tidymodels tutorial](https://www.tidymodels.org/start/models/). Hopefully my coding style is clear enough to make it possible to follow along without these resources, but they are the first places I would send someone who was interested in digging into the code. As for the actual code, I generally work in Rmarkdown documents except in cases where I'm going to need supercomputing resources.
+Nearly all of the code in this respository is written in R, almost all using tidyverse-esque idioms. All of the computational modeling code uses the tidymodel framework to faciliate model testing and usage. If you want to get a full handle on this codebase and these concepts are a bit unknown, you would be well served to work through [R for Data Science](https://r4ds.had.co.nz/) and the [tidymodels tutorial](https://www.tidymodels.org/start/models/). Hopefully my coding style is clear enough to make it possible to follow along without these resources, but they are the first places I would send someone who was interested in digging into the code. As for the actual code, I generally work in Rmarkdown documents except in cases where I'm going to need supercomputing resources in which case I write standard R scripts that can be run at the command line.
 
 Otherwise, everything in this respository was written using Rstudio, but I don't think Rstudio is strickly necessary to run or modify the code. Typically, when I'm working on this project the first thing I do is open the R project file present in the top level directory. 
 
@@ -22,7 +26,7 @@ Before diving into the rest of the code, you should take a look at and run [`pac
 
 I've only ever tested this code on Linux (Ubuntu) and the supercomputing cluster at UNC. I think a majority of the code will work on other platforms, but I haven't tested it.
 
-# Data Organization Code
+## Data Organization Code
 
 This section of the code base deals with organizing, reformatting and otherwise preparing the raw downloaded data sets for the modeling sections of the code. In general, I tried to divide the code into sections that directly touch the raw data (this code) and code that only deals with the output of this section (the rest of the code). As mentioned above, all the code is in [`src/data_organization`](src/data_organaization) and the following Rmarkdown scripts contain the critical code:
 
@@ -34,25 +38,29 @@ This section of the code base deals with organizing, reformatting and otherwise 
 
 All the other script files in the [`data organization`](src/data_organaization) are related to other ideas we've had that weren't important in the paper. I thought about scrubbing all the unnecessary files out, but maybe someone will find something interesting in them.
 
-## Reproducibility
+### Reproducibility
 
 I've made a simple script that runs the above scripts in sequence to produce all the files needed for the modelling effort ([`reproduce_data_org.R`](src/data_organization/reproduce_data_org.R)). On my computer (Ryzen 7 5800x) it took about 3 minutes and used 4.7 GB of RAM.
 
-# Modeling Code
+## Modeling Code
 
 As I mentioned above, all the modeling code is written using the tidymodels framework and each modeling attempt has two parts. The first part of the modeling code calculates the correlation coefficients between cell viability and each of the potential model features using the cross validation folds if to divide the data if requested. The second part of the modeling method then uses those correlation values and a given number of features to then build and test the model. Since the primary model we selected in the paper was a random forest with 500 features selected from the kinase activation states and gene expression, I'll use those files as examples.
 
-## Sample Modeling Code Discussion
+### Sample Modeling Code
 
 * [`get_feat_cor.R`](src/build_ML_models_expression_regression/get_feat_cor.R): This script reads in the data set from the data organization section and finds the correlations between cell viability and each of the features. In the case of this file, it only reads and searches the Klaeger activation states and gene expression, but this varies depending on the data sets the model includes. The feature correlation calculations are calculated in a cross validation aware fashion. This script also contains the code for making the cross validation fold assignments and building the full data file needed to make the final model that includes all of the data. Normally, with new model testing, I run this code once to make the CV fold assignments (saved to disk) to ensure that I don't accidentally use multiple cross validation assignments. You might be wondering why I don't just the built in CV code in tidymodels and it's because tidymodels doesn't support out of the differing feature selection across folds and this also makes it possible to run all the CV folds independently on the supercomputer.
 * [`build_random_forest_models_no_tune.R`](src/build_ML_models_expression_regression/build_random_forest_models_no_tune.R): Hopefully you will forgive my overly wordy file names, but as you can hopefully guess, this script builds a random forest model for CV testing without tuning. It takes two parameters, the cross validation fold ID to run on and the number of features to include in the model, although the code will also run without specifying any parameter with a default of 100 features and CV fold ID 1. The other model types ([`XGBoost`](src/build_ML_models_expression_regression/build_xgboost_models_no_tune.R) and [`linear regression`](src/build_ML_models_expression_regression/build_linear_models.R)) get their own files that look very similar to this one (thanks tidymodels).
 
 There are two other smaller scripts used to make the modeling run [`send_feat_cor_cmd.R`](src/build_ML_models_expression_regression/send_feat_cor_cmd.R) and [`send_model_cmd.R`](src/build_ML_models_expression_regression/send_model_cmd.R). These scripts simply build the commands needed to run the feature correlations and modeling runs and send them into the computational queue on the supercomputer at UNC. If you have access to a slurm cluster these will probably work, but if not you can use them as a template to run your models locally or on whatever supercomputing system you use.
 
+### Other Modeling Code
 
+### Reproducibility
 
-## Reproducibility
+All of the [`send_feat_cor_cmd.R`]() and [`send_model_cmd.R`]() should reproduce the model runs for each of the modeling code sections described above. I thought about writing a single script to run each of these, but since I suspect that anyone will likely need to modify these files to get them to work in their local environment, I haven't written it. If there is demand for such a file, I'll be glad to give it a shot. 
 
-# Validation Data Code
+Since I ran all of this code on UNC's supercomputer, I don't have a very precise idea of how long it would take to completely reproduce the CV model runs. As a test, I ran one of the CV folds through all of the modeling types used in the paper for the activation and expression model. It took 3.6 hours and the RAM usage peaked at 36 GB. Extrapolating that out means about 36 hours of computational time and you should probably have 64 GB of RAM to be safe.
 
-## Reproducibility
+## Validation Data Code
+
+### Reproducibility
