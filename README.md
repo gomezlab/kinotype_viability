@@ -130,3 +130,8 @@ Nearly all of the subpanels in the figures are produced using ggplot, with patch
 ### Reproducibility
 
 I take a slightly different approach to reproducibility here. If you have found a figure subpanel you are interested in, you should be able to use the name of that subpanel to grep through the [`src`](src) folder to find where that filename appears. The code in that R markdown file should reproduce the figure in question.
+
+
+## Other Experiments
+
+We've tried a few other things with this data that we haven't full fleshed out yet, but keep in repository as they are at least tangentially related to the work. All of these are stuffed into the [`other_experiments`](src/other_experiments/) folder. I'll point out one topic I'm interested in is whether we can use the Klaeger data to optimally design kinase inhbitor screens to maximize the amount of information we can get out of the results. Some very preliminary work related to that is located in [`optimal_compound_sets`](src/other_experiments/optimal_compound_sets/).
