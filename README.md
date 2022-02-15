@@ -16,11 +16,12 @@ Otherwise, everything in this respository was written using Rstudio, but I don't
 
 The raw data used for this work is too large to fit into this repository, but I've made a copy of the data organized into the directory structure the rest of the code expects on zenodo. A majority of the data sets were downloaded from the [depmap data portal](https://depmap.org/portal/download/) and compressed, with the remainder coming from journal supplemental data sections. These files should end up in a top level "/data" directory.
 
-As for the overall organization of the code, there are three primary divisions:
+As for the overall organization of the code, there are four primary divisions:
 
-* Code for organizing the raw data: located in [`src/data_organization`](src/data_organization)
-* Code for testing models: this is a majority of the rest of the code, so in the modeling section I'll point towards specific locations to look for code related to the models in the paper
-* Code for organizing the validation data: located in [`src/validation_screen`](src/validation_screen)
+* [Code for organizing the raw data](#data-organization-code): located in [`src/data_organization`](src/data_organization)
+* [Code for testing models](#modeling-code): this is a majority of the rest of the code, so in the modeling section I'll point towards specific locations to look for code related to the models in the paper
+* [Code for the validation data](#validation-data-code): located in [`src/validation_screen`](src/validation_screen)
+* [Code for building the figures](#figure-production-code): Located in the folder most relevant to building each figure
 
 Before diving into the rest of the code, you should take a look at and run [`package_check.R`](src/package_check.R). This is a script that uses the pacman library to check for library installations and if missing installs them. It also installs two packages from github that I maintain ([DarkKinaseTools](https://github.com/IDG-Kinase/DarkKinaseTools) and [BerginskiRMisc](https://github.com/mbergins/BerginskiRMisc)). 
 
