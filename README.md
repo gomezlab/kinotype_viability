@@ -6,7 +6,7 @@ Berginski ME, Joisa C, et al. In process
 
 ## Audience
 
-This is written to give an overview of the computational side of this work to an interested grad student. I'm basically trying to write down what I would tell you if you were sitting next to me and wanted an overview of this work. You probably have 1-2 years of experience writing R code and associated computing effort, including interacting with the command line and high-throughput computing resources. If this doesn't describe you, don't despair, you can probably still get something out of this repository.
+This is written to give an overview of the computational side of this work to an interested grad student. You probably have 1-2 years of experience writing R code and associated computing effort, including interacting with the command line and high-throughput computing resources. If this doesn't describe you, don't despair, you can probably still get something out of this repository.
 
 ## Overall Code Organization, Philosophy and Prerequisites
 
@@ -41,7 +41,7 @@ All the other script files in the [`data organization`](src/data_organaization) 
 
 ### Reproducibility
 
-I've made a simple script that runs the above scripts in sequence to produce all the files needed for the modelling effort ([`reproduce_data_org.R`](src/data_organization/reproduce_data_org.R)). On my computer (Ryzen 7 5800x) it took about 3 minutes and used 4.7 GB of RAM.
+I've made a simple script that runs the above scripts in sequence to produce all the files needed for the modelling effort ([`reproduce_data_org.R`](src/data_organization/reproduce_data_org.R)). On my computer (Ryzen 7 5800x) it took about 3 minutes.
 
 ## Modeling Code
 
