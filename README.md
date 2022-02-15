@@ -72,6 +72,8 @@ I've tried many variations on ways to modify the cross validation strategy, data
 * [`build_ML_models_expression_regression`](src/build_ML_models_expression_regression): This is the code detailed in the sample modeling code section, it builds and tests the kinase activation and gene expression model.
 * [`build_ML_models_all_data_regression`](src/build_ML_models_all_data_regression): This code uses all the data types (gene expression, CNV, proteomics and CRISPR-KO) for modeling. These results are included in the paper as the all data model.
 
+You can safely ignore the rest of the modeling code descriptions that follow if all you are interested in stuff related directly to the paper content. We chased down a lot of other avenues on the modeling side though and some of these sections might be relevant if share some of our interests.
+
 #### Cross Validation Strategy Variation
 
 Aside from the per cell line-compound combo cross valdiation covered in the paper, there are two alternative cross valdiation strategies we thought about:
@@ -111,8 +113,20 @@ Since I ran all of this code on UNC's supercomputer, I don't have a very precise
 
 ## Validation Data Code
 
+After working through the above modeling code, we decided on a the settings we would use to build a final model to make predictions on all the cell lines and compound combinations we didn't included in the model. Testing all these predictions was impossible, so we focused on a cancer subtype we had already worked on, triple negative breast cancer (TNBC). To test the predictions related to TNBC, we purchased compounds from the Klaeger set and ran cell viability assays as described in the paper. We split up each section into a script that organizes the raw data from the plate reader (linked below) and a script that converts the organized data into results figures. There were three types of experiments run:
+
+* [`Direct Replication`](src/validation_screen/assess_PRISM_replication.Rmd): This processes the data that is a direct attempt to replicate some of the viability results in our experimental setup.
+* [`Single Extrapolation`](src/validation_screen/assess_viability_validation.Rmd): This processes the data where we tested out model results in cell lines which were in the model, but for compounds that were (mostly) not yet tested in those lines. The name single extrapolation indicates we are only extrapolating along the compound axes here.
+* [`Double Extrapolation`](src/validation_screen/assess_double_negative_validation.Rmd): Finally, we also tested viability predictions in cell line and compounds that aren't haven't been tested by PRISM at all. The name double extrapolation indicates that we are asking the model to extrapolate along both the compound and cell line axes.
+
 ### Reproducibility
 
+Similar to the data organization section, I've made a [`script`](src/validation_screen/reproduce_validation_results.R) that reproduces the validation data processing. It only took about 30 seconds to run on my computer.
 
 ## Figure Production Code
 
+Nearly all of the subpanels in the figures are produced using ggplot, with patchwork to help for the multipanel plots. To put the figures together, I organize them in Inkscape and add appropriate A/B/C labels for the figure captions. The biggest exceptions are the figures I make directly in Inkscape (the flow chart in Figure 1) and figures with extensive extra annotation that would be difficult to do entirely in R (part A of the validation data figure, although the black and white dots pattern is made in R).
+
+### Reproducibility
+
+I take a slightly different approach to reproducibility here. If you have found a figure subpanel you are interested in, you should be able to use the name of that subpanel to grep through the [`src`](src) folder to find where that filename appears. The code in that R markdown file should reproduce the figure in question.
