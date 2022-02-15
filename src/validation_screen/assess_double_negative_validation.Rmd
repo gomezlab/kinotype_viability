@@ -73,8 +73,7 @@ testing_results = testing_results %>%
 	mutate(drug = fct_relevel(as.factor(drug), compound_order$drug))
 
 testing_results_novel = testing_results %>%
-	filter(!is.na(pred_via)) %>%
-	group_by()
+	filter(!is.na(pred_via))
 ```
 
 ```{r}
