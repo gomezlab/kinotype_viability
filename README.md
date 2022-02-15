@@ -6,7 +6,7 @@ Berginski ME, Joisa C, et al. In process
 
 ## Audience
 
-This file is written to give an overview of the computational side of this work to an interested grad student. You probably have 1-2 years of experience writing R code and associated computing effort, including interacting with the command line and high-throughput computing resources. If this doesn't describe you, don't despair, you can probably still get something out of this repository.
+This is written to give an overview of the computational side of this work to an interested grad student. I'm basically trying to write down what I would tell you if you were sitting next to me and wanted an overview of this work. You probably have 1-2 years of experience writing R code and associated computing effort, including interacting with the command line and high-throughput computing resources. If this doesn't describe you, don't despair, you can probably still get something out of this repository.
 
 ## Overall Code Organization, Philosophy and Prerequisites
 
@@ -82,11 +82,25 @@ We discarded both of these as too computationally expensive.
 
 #### Data Sources Variation
 
-We've had lots questions about how the model would preform in situtations beyond the two outlined in the main paper. 
+We've had lots questions about how the model would preform in situtations beyond the two outlined in the main paper. As a catch all term, I call these [`alternative data sets`](src/alternative_data_sets/). One question relates to how the kinase activation state and expression model performs when various parts of the data are removed:
 
-#### Data Improvement
+* [`Expression Only`](src/alternative_data_sets/exp_only_regression/): These files handle trying to build a model using only the gene expression data, it doesn't go well.
+* [`Only Kinases and Expression`](src/alternative_data_sets/only_kinase_regression/): Since there are lots of non-kinases in the Klaeger results (49%), we also tested out building the models without the non-kinase activation states. This model performs nearly as well, but there is still a fair amount of information coming from the non-kinases.
+* [`Only All Data Lines`](src/alternative_data_sets/build_ML_models_exp_only_all_data_lines/): Since the all data model has to include substantially fewer cell lines, to be fair, I also rebuilt the activation and expression models with only those same lines.
 
+Another question these models tackle is can we modify the activation data to make it match more with the actual proteome complement of each cell line. Basically, the activation state of a given protein shouldn't matter if that protein isn't present in that cell line. Neither of these method ultimately worked out, but I thought they were interesting enough to make sure I documented them. We looked at two ways to do this:
 
+* [`Baseline MIBs`](src/alternative_data_sets/MIB_adj_and_pred/): [Previous work](https://doi.org/10.18632/oncotarget.24337) has used a MIBs based assay to determine the kinase complement of some TNBC cell lines. We took this data and changed the activation values for proteins not present in a given cell line. This still might work if you used a more sophisticated method to weight the activation values.
+* [`Gene Expression`](src/alternative_data_sets/exp_adj/): Similar to the baseline MIBs except using the measured gene expression to block activation values for proteins with low expression values. The real question here is what's the appropriate TPM threshold for making a change and should this threshold be modified for the distribution of a given gene's expression values. Once again, I think a more sophisticated method of weighting might make this work.
+
+Finally, I also tested out [`scrambling the compound and cell line labels`](src/alternative_data_sets/build_ML_models_data_scramble/), working under the assumption that the model would mostly revert back to baseline if these biological relationships were broken. This worked exactly as expected with the model reverting to almost perfectly match the dose-only baseline.
+
+#### Feature Selection Techniques
+
+We used the absolute value of the spearman correlation between cell viability and the features to pick out which features to include in the model. This isn't the only method to detect a relationship between two variables though. We tested two others, mutual information and representative features from clustering to pick out features as well:
+
+* [`Mutual Information`](src/alternative_feature_selection/build_ML_models_expression_regression_MI/): This code using the [infotheo](https://cran.r-project.org/web/packages/infotheo/index.html) package to calculate the mutual information as an alternative to correlation for feature selection. This didn't outperform spearman correlation, maybe because the relationships picked out by MI are too complex for the models we tested? It might be interesting to try out a neural net with these features to see if that technique was better able to tease out the relationships.
+* [`Cluster Representatives`](src/alternative_feature_selection/build_ML_models_expression_regression_cluster/): This is a bit more complicated. The concept I started with was that it's highly likely that many of the features selected for the model are correlated with one another and so aren't contributing much new information to the system. Thus, maybe we can get more total information out of the features by first clustering the features with one another and then asking the clustering result to give us a specific number of clusters that are relatively uncorrelated with one another. From those clusters, we then pull out a single representative feature (highest abs spearman correlation) to act as the cluster's representative feature. This was a bit of a computational nightmare as even getting the clustering work required about 400 GB of RAM. Ultimately, it also didn't work and my best guess for why is because random forest actually requires some degree of redundancy between data to work well. Another good candidate for revisting with neural nets.
 
 ### Reproducibility
 
