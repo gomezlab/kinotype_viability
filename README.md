@@ -66,10 +66,27 @@ The other files in this folder are related to models not in the paper or code to
 
 All of the other modeling code in the paper has the same backbone as the kinase activation and gene expression model. As far as the folder names for the modeling code, in general I tried to make it clear what data sources or how they were modified along with some indication of the target of the modeling effort. Some of the naming choices are also related to differentiating a folder from a similar modeling effort that has since been removed. For example, at the beginning of this project I started off building models to classify whether a cell viability value was above or below the median, but this was quickly discarded when it became clear that regression would work reasonablely well. Also, since kinase activation state is so important for the models, I don't explicity call that data type out in the folder names as it was always included by default.
 
-I've tried many variations on ways to modify the cross validation strategy, data sources used and methods for improving the data. Only two of these feature prominently in the paper:
+I've tried many variations on ways to modify the cross validation strategy, data sources used and feature selection techniques. Only two of these feature prominently in the paper:
 
 * [`build_ML_models_expression_regression`](src/build_ML_models_expression_regression): This is the code detailed in the sample modeling code section, it builds and tests the kinase activation and gene expression model.
-* [`build_ML_models_all_data_regression`](src/build_ML_models_all_data_regression): This code uses all the data types (gene expression, CNV, proteomics and CRISPR-KO) for modeling. These results are included in the 
+* [`build_ML_models_all_data_regression`](src/build_ML_models_all_data_regression): This code uses all the data types (gene expression, CNV, proteomics and CRISPR-KO) for modeling. These results are included in the paper as the all data model.
+
+#### Cross Validation Strategy Variation
+
+Aside from the per cell line-compound combo cross valdiation covered in the paper, there are two alternative cross valdiation strategies we thought about:
+
+* [`Leave One Compound Out`](src/alternative_CV/build_ML_models_expression_regression_LOCO/): Run cross validation by leaving a single compound out of the training.
+* [`Leave One Cell Line Out`](src/alternative_CV/build_ML_models_expression_regression_LOLO/): Run cross validation by leaving a single cell line out of the training
+
+We discarded both of these as too computationally expensive.
+
+#### Data Sources Variation
+
+We've had lots questions about how the model would preform in situtations beyond the two outlined in the main paper. 
+
+#### Data Improvement
+
+
 
 ### Reproducibility
 
