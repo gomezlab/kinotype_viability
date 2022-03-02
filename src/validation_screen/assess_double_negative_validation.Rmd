@@ -16,7 +16,6 @@ knitr::opts_knit$set(root.dir = here())
 ```
 
 ```{r}
-
 PRISM_sample_info = read_csv(here('data/CCLE_data/sample_info.csv')) %>%
 	filter(cell_line_name == "SUM-159PT" | cell_line_name == "SK-BR-3") 
 

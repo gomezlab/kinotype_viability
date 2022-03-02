@@ -194,5 +194,5 @@ ggplot(plate_vals_row_norm %>% filter(compound != "DMSO"), aes(x=concentration_M
 	ggtitle("")
 
 ggsave(here('figures/validation_screen/double_negative_validation_viabilities_row_norm.png'),width=20*0.75,height=15*0.75)
-BerginskiRMisc::trimImage(here('figures/double_negative_validation_screen/validation_viabilities_row_norm.png'))
+BerginskiRMisc::trimImage(here('figures/validation_screen/double_negative_validation_viabilities_row_norm.png'))
 ```
