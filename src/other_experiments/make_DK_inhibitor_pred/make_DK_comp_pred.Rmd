@@ -109,11 +109,12 @@ neg_ctrl = tribble(
 )
 
 DK_drug_set = bind_rows(
-	fill_in_activation(CK2_inhib_pseudo_k) %>% mutate(drug = "SGC-CK2-1 - CSNK2A2"),
-	fill_in_activation(PIP4K2C_inhib_pseudo_k) %>% mutate(drug = "BI00048423 - PIP4K2C"),
-	fill_in_activation(CAMKK2_inhib_pseudo_k) %>% mutate(drug = "SGC-CAMKK2-1 - CAMKK2"),
-	fill_in_activation(DYRK1B_inhib_pseudo_k) %>% mutate(drug = "BI00036838 - DYRK1B"),
-	fill_in_activation(neg_ctrl) %>% mutate(drug = "Neg Ctrl"),
+	fill_in_activation(CK2_inhib_pseudo_k) %>% mutate(drug = "SGC-CK2-1", gene_target = "CSNK2A2"),
+	fill_in_activation(PIP4K2C_inhib_pseudo_k) %>% mutate(drug = "BI00048423", gene_target = "PIP4K2C"),
+	fill_in_activation(CAMKK2_inhib_pseudo_k) %>% mutate(drug = "SGC-CAMKK2-1", gene_target = "CAMKK2"),
+	fill_in_activation(DYRK1B_inhib_pseudo_k) %>% mutate(drug = "BI00036838", gene_target = "DYRK1B"),
+	fill_in_activation(neg_ctrl) %>% mutate(drug = "SGC-CK2-1N", gene_target = "None"),
+	fill_in_activation(neg_ctrl) %>% mutate(drug = "SGC-CAMKK2-1N", gene_target = "None"),
 )
 
 cell_line_cross = crossing(
@@ -133,23 +134,23 @@ data_for_model = cell_line_cross %>%
 model_predictions = data_for_model %>%
 	select(DepMap_ID,drug,concentration_M)
 
-model_predictions$viability = predict(rand_forest_model,data_for_model %>%
+model_predictions$pred_via = predict(rand_forest_model,data_for_model %>%
 																				mutate(klaeger_conc = NA, imputed_viability = NA, depmap_id = NA)) %>%
 	pull(.pred)
 
-# write_rds(rand_forest_model$fit$fit, here('results/single_model_expression_regression/only_model_fit.rds'), compress = 'gz')
-# 
-# rand_forest_model = read_rds(here('results/single_model_expression_regression/only_model_fit.rds'))
-# 
-# tic(); model_predictions = data_for_model %>% select(DepMap_ID,drug,concentration_M); model_predictions$viability = predict(rand_forest_model,data_for_model %>% mutate(klaeger_conc = NA, imputed_viability = NA, depmap_id = NA)) %>% pull(.pred); toc();
+model_predictions$DepMap_ID = data_for_model$DepMap_ID
+model_predictions$drug = data_for_model$drug
+model_predictions$concentration_M = data_for_model$concentration_M
+
+write_rds(model_predictions,here('results/single_model_expression_regression/DK_compound_model_preds.rds'))
 
 model_pred_summary = model_predictions %>%
 	group_by(concentration_M, drug) %>%
-	summarise(mean_via = mean(viability),
-						conf.low = tidy(t.test(viability))$conf.low,
-						conf.high = tidy(t.test(viability))$conf.high,
-						quat_025 = quantile(viability,0.025),
-						quat_975 = quantile(viability,0.975))
+	summarise(mean_via = mean(pred_via),
+						conf.low = tidy(t.test(pred_via))$conf.low,
+						conf.high = tidy(t.test(pred_via))$conf.high,
+						quat_025 = quantile(pred_via,0.025),
+						quat_975 = quantile(pred_via,0.975))
 ```
 
 ```{r}
@@ -169,13 +170,13 @@ model_pred_TNBC = model_predictions %>%
 	left_join(avail_lines %>% select(DepMap_ID, cell_line_name)) %>%
 	# bind_rows(model_pred_summary %>%
 	# 						mutate(DepMap_ID = "Overall",cell_line_name = "Overall") %>%
-	# 						rename(viability = mean_via)) %>%
+	# 						rename(pred_via = mean_via)) %>%
 	identity()
 ```
 
 ```{r}
 
-ggplot(model_pred_TNBC, aes(x=log10(concentration_M), y=viability)) +
+ggplot(model_pred_TNBC, aes(x=log10(concentration_M), y=pred_via)) +
 	geom_line(data = model_pred_summary, mapping = aes(y=mean_via), color='black') +
 	geom_ribbon(data = model_pred_summary, mapping = aes(ymin=quat_025, ymax=quat_975, y=mean_via), fill='grey70') +
 	geom_point(aes(color=cell_line_name),alpha=0.75) +
