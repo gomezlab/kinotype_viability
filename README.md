@@ -1,5 +1,7 @@
 # Kinase Inhibitor Cell Viability Modeling
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.6323686.svg)](https://doi.org/10.5281/zenodo.6323686)
+
 This repository contains the source code used to organize the data and build models associated with:
 
 Berginski ME, Joisa C, et al. In process
@@ -41,7 +43,7 @@ All the other script files in the [`data organization`](src/data_organaization) 
 
 ### Reproducibility
 
-I've made a simple script that runs the above scripts in sequence to produce all the files needed for the modelling effort ([`reproduce_data_org.R`](src/data_organization/reproduce_data_org.R)). On my computer (Ryzen 7 5800x) it took about 3 minutes.
+I've made a simple script that runs the above scripts in sequence to produce all the files needed for the modelling effort ([`reproduce_data_org.R`](src/data_organization/reproduce_data_org.R)). On my computer (Ryzen 7 5800x) it took about 3 minutes. We have deposited copies of the data sets used for these steps at [Zenodo](https://doi.org/10.5281/zenodo.6323685).
 
 ## Modeling Code
 
@@ -107,7 +109,7 @@ We used the absolute value of the spearman correlation between cell viability an
 
 ### Reproducibility
 
-All of the [`send_feat_cor_cmd.R`]() and [`send_model_cmd.R`]() should reproduce the model runs for each of the modeling code sections described above. I thought about writing a single script to run each of these, but since I suspect that anyone will likely need to modify these files to get them to work in their local environment, I haven't written it. If there is demand for such a file, I'll be glad to give it a shot. 
+All of the [`send_feat_cor_cmd.R`]() and [`send_model_cmd.R`]() should reproduce the model runs for each of the modeling code sections described above. We have deposited copies of the model results produced by this code at [Zenodo](https://doi.org/10.5281/zenodo.6323685). I thought about writing a single script to run each of these, but since I suspect that anyone will likely need to modify these files to get them to work in their local environment, I haven't written it. If there is demand for such a file, I'll be glad to give it a shot. 
 
 Since I ran all of this code on UNC's supercomputer, I don't have a very precise idea of how long it would take to completely reproduce the CV model runs. As a test, I ran one of the CV folds through all of the modeling types used in the paper for the activation and expression model. It took 3.6 hours and the RAM usage peaked at 36 GB. Extrapolating that out means about 36 hours of computational time (8 cores on a Ryzen 7 5800x) and you should probably have 64 GB of RAM to be safe.
 
