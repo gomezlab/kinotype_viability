@@ -1,5 +1,5 @@
 ---
-title: "Make Activation/Expression Feature Selection Figures"
+title: "Make Inhibition/Expression Feature Selection Figures"
 author: "Matthew Berginski"
 date: "`r Sys.Date()`"
 output: github_document
@@ -37,9 +37,9 @@ PRISM_klaeger_imputed = PRISM_klaeger_imputed %>%
 # Assess Full Data Correlations
 
 ```{r}
-tic()
-all_cor = read_rds(here('results/single_model_expression_regression/full_data_cor.rds'))
-toc()
+all_cor = read_rds(here('results/single_model_expression_regression/full_data_cor.rds')) %>%
+	mutate(feature_type = as.factor(ifelse(feature_type == "Activation", "Inhibition", feature_type))) %>%
+	mutate(feature_type = fct_relevel(feature_type,"Inhibition",after = 0))
 
 per_group_rank = all_cor %>%
 	group_by(feature_type) %>%
@@ -71,7 +71,7 @@ PRISM_klaeger_samples = PRISM_klaeger_imputed %>%
 ggplot(PRISM_klaeger_samples, aes(x=activation,y=imputed_viability)) +
 	geom_point(size=0,alpha=0.1) +
 	geom_smooth(method = lm) +
-	labs(x="Kinase Activation State",y="Imputed Viability") +
+	labs(x="Kinase Inhibition State",y="Imputed Viability") +
 	BerginskiRMisc::theme_berginski() +
 	theme(aspect.ratio = 1:1) +
 	facet_wrap(~gene, scales = "free_x")
@@ -83,7 +83,7 @@ activation_hex = ggplot(PRISM_klaeger_samples, aes(x=activation,y=imputed_viabil
 	# geom_hex(fill = log10(..count..)) +
 	stat_binhex(aes(fill=log10(..count..))) +
 	geom_smooth(method = lm, color = 'red', lwd=1) +
-	labs(x="Kinase Activation State",y="Imputed Viability",fill="Log10\nData Points") +
+	labs(x="Kinase Inhibition State",y="Imputed Viability",fill="Log10\nData Points") +
 	BerginskiRMisc::theme_berginski() +
 	theme(aspect.ratio = 1:1, legend.text = element_text(size=8), legend.title = element_text(size=8)) +
 	scale_y_continuous(breaks = seq(0,1,by=0.25)) +
@@ -207,7 +207,7 @@ ggsave(here('figures/feature_selection_expression/selection_order.png'),
 			 	per_rank_zoom + 
 			 	plot_layout(guides = "collect") & 
 			 	theme(legend.position = 'bottom', legend.margin=margin(0,0,0,0), legend.box.margin=margin(-10,-10,-10,-10)),
-			 width=7,height=3.2)
+			 width=4*1.5,height=2*1.5)
 BerginskiRMisc::trimImage(here('figures/feature_selection_expression/selection_order.png'))
 ```
 
