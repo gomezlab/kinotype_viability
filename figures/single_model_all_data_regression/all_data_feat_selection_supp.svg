@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <svg
-   width="2550"
-   height="3300"
-   viewBox="0 0 674.68748 873.12502"
+   width="2549.1672"
+   height="1370.1731"
+   viewBox="0 0 674.46714 362.52497"
    version="1.1"
    id="svg8"
    inkscape:version="1.1.1 (3bf5ae0d25, 2021-09-20)"
@@ -28,8 +28,8 @@
      inkscape:pageopacity="1"
      inkscape:pageshadow="2"
      inkscape:zoom="0.55757576"
-     inkscape:cx="526.38587"
-     inkscape:cy="1504.7283"
+     inkscape:cx="877.9076"
+     inkscape:cy="1155"
      inkscape:document-units="px"
      inkscape:current-layer="layer1"
      inkscape:document-rotation="0"
@@ -41,7 +41,11 @@
      inkscape:window-y="41"
      inkscape:window-maximized="1"
      inkscape:pagecheckerboard="0"
-     showguides="true" />
+     showguides="true"
+     fit-margin-top="0"
+     fit-margin-left="0"
+     fit-margin-right="0"
+     fit-margin-bottom="0" />
   <metadata
      id="metadata5">
     <rdf:RDF>
@@ -56,7 +60,8 @@
   <g
      inkscape:label="Layer 1"
      inkscape:groupmode="layer"
-     id="layer1">
+     id="layer1"
+     transform="translate(-6.7055225e-8,0.50621319)">
     <image
        width="383.75897"
        height="154.16104"

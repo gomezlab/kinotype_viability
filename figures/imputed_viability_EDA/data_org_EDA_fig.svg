@@ -177,9 +177,9 @@
      borderopacity="1.0"
      inkscape:pageopacity="1"
      inkscape:pageshadow="2"
-     inkscape:zoom="0.93140481"
-     inkscape:cx="2075.8965"
-     inkscape:cy="1388.7624"
+     inkscape:zoom="0.46570241"
+     inkscape:cx="2852.6801"
+     inkscape:cy="1461.2336"
      inkscape:document-units="px"
      inkscape:current-layer="layer1"
      inkscape:document-rotation="0"
@@ -225,12 +225,12 @@
        y="16.245264"
        id="text857"
        transform="translate(0,2.0237943)"><tspan
-         x="31.187796"
+         x="20.886132"
          y="93.183345"
-         id="tspan1122">Kinome activation state </tspan><tspan
-         x="30.893242"
+         id="tspan4801">Kinome inhibition state data </tspan><tspan
+         x="42.662512"
          y="106.41247"
-         id="tspan1124">data from Klaeger et al.</tspan></text>
+         id="tspan4803">from Klaeger et al.</tspan></text>
     <g
        id="g964"
        transform="translate(-15.875,-18.29024)"
@@ -251,14 +251,14 @@
          transform="translate(3.0041545,-91.301206)"><tspan
            x="38.246094"
            y="125.20483"
-           id="tspan1128"><tspan
+           id="tspan4807"><tspan
              style="shape-inside:url(#rect853-8)"
-             id="tspan1126">Cell line viability data from </tspan></tspan><tspan
+             id="tspan4805">Cell line viability data from </tspan></tspan><tspan
            x="38.246094"
            y="138.43395"
-           id="tspan1132"><tspan
+           id="tspan4811"><tspan
              style="shape-inside:url(#rect853-8)"
-             id="tspan1130">the PRISM Project</tspan></tspan></text>
+             id="tspan4809">the PRISM Project</tspan></tspan></text>
     </g>
     <g
        id="g1126"
@@ -277,21 +277,21 @@
          transform="translate(10.583333,5.2916666)"><tspan
            x="206.39062"
            y="46.28686"
-           id="tspan1134">Data Organization:
+           id="tspan4813">Data Organization:
 </tspan><tspan
            x="206.39062"
            y="59.515986"
-           id="tspan1136">-Find shared </tspan><tspan
+           id="tspan4815">-Find shared </tspan><tspan
            x="206.39062"
            y="72.745112"
-           id="tspan1138">compounds
+           id="tspan4817">compounds
 </tspan><tspan
            x="206.39062"
            y="85.974238"
-           id="tspan1140">-Impute cell viability </tspan><tspan
+           id="tspan4819">-Impute cell viability </tspan><tspan
            x="206.39062"
            y="99.203364"
-           id="tspan1142">from curve fits</tspan></text>
+           id="tspan4821">from curve fits</tspan></text>
     </g>
     <path
        style="fill:none;fill-rule:evenodd;stroke:#000000;stroke-width:0.661458;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Arrow1Lend)"
@@ -338,13 +338,13 @@
          transform="translate(10.99449,4.8911914)"><tspan
            x="26.925781"
            y="-133.73462"
-           id="tspan1144">Build Machine Learning </tspan><tspan
+           id="tspan4823">Build Machine Learning </tspan><tspan
            x="26.925781"
            y="-120.5055"
-           id="tspan1146">Models to Predict Cell </tspan><tspan
+           id="tspan4825">Models to Predict Cell </tspan><tspan
            x="26.925781"
            y="-107.27637"
-           id="tspan1148">Viability</tspan></text>
+           id="tspan4827">Viability</tspan></text>
     </g>
     <g
        id="g1105"
@@ -365,13 +365,13 @@
          transform="translate(10.583333,3.7041665)"><tspan
            x="323.50391"
            y="189.0603"
-           id="tspan1150">Use models to predict cell </tspan><tspan
+           id="tspan4829">Use models to predict cell </tspan><tspan
            x="323.50391"
            y="202.28942"
-           id="tspan1152">viability and test subset of </tspan><tspan
+           id="tspan4831">viability and test subset of </tspan><tspan
            x="323.50391"
            y="215.51855"
-           id="tspan1154">compounds</tspan></text>
+           id="tspan4833">compounds</tspan></text>
     </g>
     <path
        style="fill:none;fill-rule:evenodd;stroke:#000000;stroke-width:0.661458;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#marker1686)"
@@ -462,10 +462,10 @@
        transform="translate(1.0583333)"><tspan
          x="348.25195"
          y="9.9899852"
-         id="tspan1156">Integrate additional data from </tspan><tspan
+         id="tspan4835">Integrate additional data from </tspan><tspan
          x="348.25195"
          y="23.219109"
-         id="tspan1158">CCLE and associated projects</tspan></text>
+         id="tspan4837">CCLE and associated projects</tspan></text>
     <path
        style="fill:none;fill-rule:evenodd;stroke:#000000;stroke-width:0.661458;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#marker999)"
        d="m 420.6387,28.224491 -0.71875,39.474834"
