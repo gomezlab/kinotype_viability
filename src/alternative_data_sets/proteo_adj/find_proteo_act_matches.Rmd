@@ -1,0 +1,265 @@
+---
+title: "Match Activation and Expression Data"
+author: "Matthew Berginski"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+
+knitr::opts_knit$set(root.dir = here())
+```
+
+```{r}
+klaeger_wide = read_rds(here('results/klaeger_full_tidy.rds')) %>%
+	mutate(act_gene_name = paste0("act_",gene_name)) %>%
+	select(-gene_name) %>%
+	pivot_wider(names_from = act_gene_name, values_from = relative_intensity)
+
+proteo_data = read_rds(here('results/single_model/CCLE_proteomics_imputed_wide.rds')) %>%
+	select(-CCLE_cell_line_name,-tenplex_number) %>%
+	pivot_longer(-DepMap_ID, names_to = "gene_id", values_to = "MS_val")
+
+ensembl <- biomaRt::useEnsembl(biomart = "genes", 
+															 dataset = "hsapiens_gene_ensembl", 
+															 mirror = "useast")
+
+proteo_uniprot_to_hgnc = biomaRt::getBM(attributes = c("hgnc_symbol", "uniprot_gn_id"), 
+																 mart = ensembl, 
+																 filters = "uniprot_gn_id", 
+																 values = unique(proteo_data$gene_id))
+```
+
+```{r}
+match_set = data.frame(temp = names(klaeger_wide %>% select(-drug,-concentration_M))) %>% 
+	separate(temp, into = c(NA,"act_gene"), sep = "_")
+
+match_set = match_set %>%
+	left_join(proteo_uniprot_to_hgnc, by = c('act_gene'='hgnc_symbol'))
+
+missing_act_set = match_set %>%
+	filter(is.na(uniprot_gn_id))
+
+# Checking to make sure the missing matches aren't mapping to an unexpected uniprot ID
+missing_act_set_uniprot = biomaRt::getBM(attributes = c("hgnc_symbol", "uniprot_gn_id"), 
+																 mart = ensembl, 
+																 filters = "hgnc_symbol", 
+																 values = unique(missing_act_set$act_gene))
+
+unexpected_matches = missing_act_set_uniprot %>% 
+	filter(uniprot_gn_id %in% proteo_uniprot_to_hgnc$uniprot_gn_id)
+```
+
+```{r}
+manual_matches = tribble(
+	~act_gene,~uniprot_manual,
+	"BRD4;BRD3","O60885",
+	"BRD4;BRD3","Q15059",
+	"CSNK2A1;CSNK2A3","P68400",
+	"EIF2S3;EIF2S3L","P41091",
+	"PCBP2;PCBP3","F8VRH0",
+	"PCBP2;PCBP3","F8VZX2",
+	"PCBP2;PCBP3","Q15366",
+	"PCBP2;PCBP3","P57721",
+	"PDPK1;PDPK2P","O15530",
+	"PIP4K2A;PIP4K2B","P78356",
+	"PRKCE;PRKCH","Q02156",
+	"PRKCE;PRKCH","P24723",
+	"PRKX;PRKY","P51817",
+	"U2AF1;U2AF1L4","Q01081",
+	"YTHDF3;YTHDF1","Q7Z739",
+	"YTHDF3;YTHDF1","Q9BYJ9",
+)
+
+match_set = match_set %>%
+	left_join(manual_matches, by='act_gene') %>%
+	mutate(uniprot_all = case_when(
+		is.na(uniprot_gn_id) & ! is.na(uniprot_manual) ~ uniprot_manual,
+		! is.na(uniprot_gn_id) & is.na(uniprot_manual) ~ uniprot_gn_id,
+		T ~ NA_character_
+	))
+
+# match_set %>% filter(is.na(perfect_match), is.na(manual)) %>% View()
+```
+
+```{r}
+dir.create(here('results/proteo_adj'), showWarnings = F)
+
+proteo_data_long_match = proteo_data %>%
+	filter(gene_id %in% match_set$uniprot_all) %>%
+	left_join(match_set %>% select(act_gene,uniprot_all), by = c('gene_id'='uniprot_all')) %>%
+	identity()
+
+proteo_data_act_summary = proteo_data_long_match %>%
+	group_by(DepMap_ID,act_gene) %>%
+	summarise(MS_val = sum(MS_val))
+
+proteo_data_per_gene_quantile = proteo_data_act_summary %>%
+	# filter(act_gene == "LATS1" | act_gene == "CSNK1G1") %>%
+	group_by(act_gene) %>%
+	summarise(below_05_per_gene_thresh = quantile(MS_val,0.05),
+						below_10_per_gene_thresh = quantile(MS_val,0.10),
+						below_15_per_gene_thresh = quantile(MS_val,0.15),
+						below_20_per_gene_thresh = quantile(MS_val,0.20),
+						below_50_per_gene_thresh = quantile(MS_val,0.50)) %>%
+	ungroup()
+
+proteo_data_act_summary = proteo_data_act_summary %>%
+	left_join(proteo_data_per_gene_quantile) %>%
+	mutate(below_05_per = MS_val <= below_05_per_gene_thresh) %>%
+	mutate(below_10_per = MS_val <= below_10_per_gene_thresh) %>%
+	mutate(below_15_per = MS_val <= below_15_per_gene_thresh) %>%
+	mutate(below_20_per = MS_val <= below_20_per_gene_thresh) %>%
+	mutate(below_50_per = MS_val <= below_50_per_gene_thresh) %>%
+	arrange(MS_val) %>%
+	write_rds(here('results/proteo_adj/gene_proteo_and_act.rds'), compress = 'gz')
+```
+
+# Apply Adjustments
+
+```{r}
+PRISM_klaeger_imputed = read_rds(here('results/PRISM_klaeger_imputed_tidy.rds'))
+PRISM_lines = unique(PRISM_klaeger_imputed$depmap_id)[unique(PRISM_klaeger_imputed$depmap_id) %in% unique(proteo_data$DepMap_ID)]
+rm(PRISM_klaeger_imputed); gc();
+
+klaeger_tidy = read_rds(here('results/klaeger_full_tidy.rds')) %>%
+	filter(gene_name %in% (match_set %>% filter(!is.na(uniprot_all)) %>% pull(act_gene)))
+klaeger_null_percent = mean(klaeger_tidy$relative_intensity == 1)
+```
+
+## Below 5 Adjustment
+
+```{r}
+temp = klaeger_tidy %>%
+	left_join(proteo_data_act_summary %>%
+							filter(DepMap_ID %in% PRISM_lines) %>%
+							select(act_gene,DepMap_ID,below_05_per), by=c('gene_name'='act_gene')) %>%
+	mutate(relative_intensity_mod = case_when(
+		is.na(below_05_per) ~ relative_intensity,
+		below_05_per ~ 1,
+		T ~ relative_intensity
+	))
+
+print(mean(temp$relative_intensity == temp$relative_intensity_mod))
+print((1 - mean(temp$relative_intensity == temp$relative_intensity_mod))/(1 - klaeger_null_percent))
+
+temp %>%
+	mutate(relative_intensity = relative_intensity_mod) %>%
+	select(-relative_intensity_mod) %>%
+	mutate(act_gene_name = paste0("act_",gene_name)) %>%
+	select(-gene_name, -below_05_per) %>%
+	pivot_wider(names_from = act_gene_name, values_from = relative_intensity) %>%
+	write_rds(here('results/proteo_adj/klaeger_wide_below_05_per_adj.rds'), compress = 'gz')
+
+rm(temp); gc()
+```
+
+## Below 10 Adjustment
+
+```{r}
+temp = klaeger_tidy %>%
+	left_join(proteo_data_act_summary %>%
+							filter(DepMap_ID %in% PRISM_lines) %>%
+							select(act_gene,DepMap_ID,below_10_per), by=c('gene_name'='act_gene')) %>%
+	mutate(relative_intensity_mod = case_when(
+		is.na(below_10_per) ~ relative_intensity,
+		below_10_per ~ 1,
+		T ~ relative_intensity
+	))
+
+print(mean(temp$relative_intensity == temp$relative_intensity_mod))
+print((1 - mean(temp$relative_intensity == temp$relative_intensity_mod))/(1 - klaeger_null_percent))
+
+temp %>%
+	mutate(relative_intensity = relative_intensity_mod) %>%
+	select(-relative_intensity_mod) %>%
+	mutate(act_gene_name = paste0("act_",gene_name)) %>%
+	select(-gene_name, -below_10_per) %>%
+	pivot_wider(names_from = act_gene_name, values_from = relative_intensity) %>%
+	write_rds(here('results/proteo_adj/klaeger_wide_below_10_per_adj.rds'), compress = 'gz')
+
+rm(temp); gc()
+```
+
+## Below 15 Adjustment
+
+```{r}
+temp = klaeger_tidy %>%
+	left_join(proteo_data_act_summary %>%
+							filter(DepMap_ID %in% PRISM_lines) %>%
+							select(act_gene,DepMap_ID,below_15_per), by=c('gene_name'='act_gene')) %>%
+	mutate(relative_intensity_mod = case_when(
+		is.na(below_15_per) ~ relative_intensity,
+		below_15_per ~ 1,
+		T ~ relative_intensity
+	))
+
+print(mean(temp$relative_intensity == temp$relative_intensity_mod))
+print((1 - mean(temp$relative_intensity == temp$relative_intensity_mod))/(1 - klaeger_null_percent))
+
+temp %>%
+	mutate(relative_intensity = relative_intensity_mod) %>%
+	select(-relative_intensity_mod) %>%
+	mutate(act_gene_name = paste0("act_",gene_name)) %>%
+	select(-gene_name, -below_15_per) %>%
+	pivot_wider(names_from = act_gene_name, values_from = relative_intensity) %>%
+	write_rds(here('results/proteo_adj/klaeger_wide_below_15_per_adj.rds'), compress = 'gz')
+
+rm(temp); gc()
+```
+
+## Below 20 Adjustment
+
+```{r}
+temp = klaeger_tidy %>%
+	left_join(proteo_data_act_summary %>%
+							filter(DepMap_ID %in% PRISM_lines) %>%
+							select(act_gene,DepMap_ID,below_20_per), by=c('gene_name'='act_gene')) %>%
+	mutate(relative_intensity_mod = case_when(
+		is.na(below_20_per) ~ relative_intensity,
+		below_20_per ~ 1,
+		T ~ relative_intensity
+	))
+
+print(mean(temp$relative_intensity == temp$relative_intensity_mod))
+print((1 - mean(temp$relative_intensity == temp$relative_intensity_mod))/(1 - klaeger_null_percent))
+
+temp %>%
+	mutate(relative_intensity = relative_intensity_mod) %>%
+	select(-relative_intensity_mod) %>%
+	mutate(act_gene_name = paste0("act_",gene_name)) %>%
+	select(-gene_name, -below_20_per) %>%
+	pivot_wider(names_from = act_gene_name, values_from = relative_intensity) %>%
+	write_rds(here('results/proteo_adj/klaeger_wide_below_20_per_adj.rds'), compress = 'gz')
+
+rm(temp); gc()
+```
+
+## Below 50 Adjustment
+
+```{r}
+temp = klaeger_tidy %>%
+	left_join(proteo_data_act_summary %>%
+							filter(DepMap_ID %in% PRISM_lines) %>%
+							select(act_gene,DepMap_ID,below_50_per), by=c('gene_name'='act_gene')) %>%
+	mutate(relative_intensity_mod = case_when(
+		is.na(below_50_per) ~ relative_intensity,
+		below_50_per ~ 1,
+		T ~ relative_intensity
+	))
+
+print(mean(temp$relative_intensity == temp$relative_intensity_mod))
+print((1 - mean(temp$relative_intensity == temp$relative_intensity_mod))/(1 - klaeger_null_percent))
+
+temp %>%
+	mutate(relative_intensity = relative_intensity_mod) %>%
+	select(-relative_intensity_mod) %>%
+	mutate(act_gene_name = paste0("act_",gene_name)) %>%
+	select(-gene_name, -below_50_per) %>%
+	pivot_wider(names_from = act_gene_name, values_from = relative_intensity) %>%
+	write_rds(here('results/proteo_adj/klaeger_wide_below_50_per_adj.rds'), compress = 'gz')
+
+rm(temp); gc()
+```
