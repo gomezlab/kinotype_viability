@@ -34,6 +34,7 @@ klaeger_wide = read_rds(here('results/proteo_adj/klaeger_wide_below_50_per_adj.r
 CCLE_data = read_rds(here('results/single_model/full_CCLE_expression_set_for_ML.rds'))
 
 PRISM_klaeger_imputed = PRISM_klaeger_imputed %>%
+	filter(depmap_id %in% klaeger_wide$DepMap_ID) %>%
 	filter(depmap_id %in% CCLE_data$DepMap_ID) %>%
 	ungroup()
 
