@@ -96,6 +96,12 @@ proteo_data_act_summary = proteo_data_long_match %>%
 	group_by(DepMap_ID,act_gene) %>%
 	summarise(MS_val = sum(MS_val))
 
+proteo_data_per_gene_adj = proteo_data_act_summary %>%
+	group_by(act_gene) %>%
+	mutate(adj_factor_perc = -1*(percent_rank(MS_val) - 1)) %>%
+	ungroup() %>%
+	select(-MS_val)
+
 proteo_data_per_gene_quantile = proteo_data_act_summary %>%
 	# filter(act_gene == "LATS1" | act_gene == "CSNK1G1") %>%
 	group_by(act_gene) %>%
@@ -108,6 +114,7 @@ proteo_data_per_gene_quantile = proteo_data_act_summary %>%
 
 proteo_data_act_summary = proteo_data_act_summary %>%
 	left_join(proteo_data_per_gene_quantile) %>%
+	left_join(proteo_data_per_gene_adj) %>%
 	mutate(below_05_per = MS_val <= below_05_per_gene_thresh) %>%
 	mutate(below_10_per = MS_val <= below_10_per_gene_thresh) %>%
 	mutate(below_15_per = MS_val <= below_15_per_gene_thresh) %>%
@@ -260,6 +267,33 @@ temp %>%
 	select(-gene_name, -below_50_per) %>%
 	pivot_wider(names_from = act_gene_name, values_from = relative_intensity) %>%
 	write_rds(here('results/proteo_adj/klaeger_wide_below_50_per_adj.rds'), compress = 'gz')
+
+rm(temp); gc()
+```
+
+## Percentile Rank Adjustment
+
+```{r}
+temp = klaeger_tidy %>%
+	left_join(proteo_data_act_summary %>%
+							filter(DepMap_ID %in% PRISM_lines) %>%
+							select(act_gene,DepMap_ID,adj_factor_perc), by=c('gene_name'='act_gene')) %>%
+	mutate(relative_intensity_mod = case_when(
+		relative_intensity == 1 ~ 1,
+		relative_intensity > 1 ~ relative_intensity - adj_factor_perc*(relative_intensity - 1),
+		relative_intensity < 1 ~ relative_intensity + adj_factor_perc*(1 - relative_intensity)
+	))
+
+print(mean(temp$relative_intensity == temp$relative_intensity_mod))
+print((1 - mean(temp$relative_intensity == temp$relative_intensity_mod))/(1 - klaeger_null_percent))
+
+temp %>%
+	mutate(relative_intensity = relative_intensity_mod) %>%
+	select(-relative_intensity_mod) %>%
+	mutate(act_gene_name = paste0("act_",gene_name)) %>%
+	select(-gene_name, -adj_factor_perc) %>%
+	pivot_wider(names_from = act_gene_name, values_from = relative_intensity) %>%
+	write_rds(here('results/proteo_adj/klaeger_wide_perc_rank_adj.rds'), compress = 'gz')
 
 rm(temp); gc()
 ```
