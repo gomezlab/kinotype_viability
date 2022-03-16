@@ -90,9 +90,11 @@ model_summary = model_results %>%
 		model_type == "lin" ~ "Linear Regresssion"
 	)) %>%
 	mutate(data_set_FN = case_when(
-		data_set == "exp" ~ "Activation and Expression",
+		data_set == "exp" ~ "Inhibition and Expression",
 		data_set == "all" ~ "All Data"
 	)) %>%
+	mutate(data_set_FN = as.factor(data_set_FN)) %>%
+	mutate(data_set_FN = fct_relevel(data_set_FN, "Inhibition and Expression", after = 0)) %>%
 	select(model_type,feat_count,trees,r2_estimate,rmse_estimate,everything())
 ```
 

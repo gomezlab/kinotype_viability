@@ -53,7 +53,9 @@ PRISM_klaeger_imputed = PRISM_klaeger_imputed %>%
 
 ```{r}
 tic()
-all_cor = find_feature_correlations()
+all_cor = find_feature_correlations() %>%
+	mutate(feature_type = as.factor(ifelse(feature_type == "Activation", "Inhibition", feature_type))) %>%
+	mutate(feature_type = fct_relevel(feature_type,"Inhibition",after = 0))
 toc()
 
 per_group_rank = all_cor %>%
