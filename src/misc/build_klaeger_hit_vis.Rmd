@@ -45,3 +45,33 @@ for (this_drug in unique(klaeger_full_tidy$drug)) {
 	BerginskiRMisc::trimImage(here('figures/klaeger_visualizations/by_compound',paste0(this_drug,".png")))
 }
 ```
+
+```{r}
+dir.create(here('figures/klaeger_visualizations/by_gene'), recursive = T, showWarnings = F)
+
+for (this_gene in unique(klaeger_full_tidy$gene_name)) {
+	this_data = klaeger_full_tidy %>%
+		filter(gene_name == this_gene)
+	
+	drug_hits = this_data %>% 
+		filter(relative_intensity != 1) %>%
+		pull(drug) %>%
+		unique()
+	
+	this_data = this_data %>%
+		filter(drug %in% drug_hits)
+	
+	num_drug = length(unique(this_data$drug))
+	
+	this_data %>% ggplot(aes(x=log10(concentration_M), y=relative_intensity, color=drug)) +
+		geom_hline(aes(yintercept = 1), linetype = 2, alpha=0.5) +
+		geom_point() +
+		geom_line() +
+		BerginskiRMisc::theme_berginski() +
+		ggtitle(num_drug) +		
+		theme(aspect.ratio = 1:1)
+	
+	ggsave(here('figures/klaeger_visualizations/by_gene',paste0(this_gene,".png")), width=10)
+	BerginskiRMisc::trimImage(here('figures/klaeger_visualizations/by_gene',paste0(this_gene,".png")))
+}
+```
