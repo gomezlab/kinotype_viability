@@ -27,7 +27,7 @@ gene_classifications = read_csv(here('data/KlaegerScience2017/manual_gene_labels
 exp_interactor_type = read_rds(here('results/single_model_expression_regression/expression_feature_interactors.rds')) %>%
 	mutate(Variable = paste0(type,"_",hgnc)) %>%
 	mutate(interaction = case_when(
-		direct_count >= 1 ~ "Activation\nInteractor",
+		direct_count >= 1 ~ "Inhibition\nInteractor",
 		T ~ "Noninterator"
 	))
 ```
@@ -35,7 +35,7 @@ exp_interactor_type = read_rds(here('results/single_model_expression_regression/
 ```{r}
 all_importance = vi(final_model %>% extract_fit_parsnip()) %>%
 		mutate(feature_type = case_when(
-			str_detect(Variable, "^act_") ~ "Activation",
+			str_detect(Variable, "^act_") ~ "Inhibition",
 			str_detect(Variable, "^exp_") ~ "Expression",
 			str_detect(Variable, "^dep_") ~ "Depmap",
 			str_detect(Variable, "^cnv_") ~ "CNV",
@@ -48,10 +48,14 @@ all_importance = vi(final_model %>% extract_fit_parsnip()) %>%
 	left_join(exp_interactor_type %>% select(Variable,interaction)) %>%
 	mutate(class = ifelse(is.na(class), "Non-kinase",class)) %>%
 	arrange(Importance) %>%
-	mutate(Variable = fct_inorder(Variable))
+	mutate(Variable = fct_inorder(Variable),
+				 gene = fct_inorder(gene))  %>%
+	mutate(feature_type = fct_relevel(feature_type,"Inhibition",after = 0))
 
-ggplot(all_importance %>% slice_tail(n = 25), 
-			 aes(x=Importance,y=Variable,fill=class)) + 
+ggplot(all_importance %>% 
+			 	filter(feature_type == "Inhibition") %>%
+			 	slice_tail(n = 25), 
+			 aes(x=Importance,y=gene,fill=class)) + 
 	geom_col() +
 	labs(y='',fill='',x='Feature Importance') +
 	BerginskiRMisc::theme_berginski() +
@@ -63,7 +67,7 @@ BerginskiRMisc::trimImage(here('figures/single_model_expression/top_25_VIP.png')
 ggplot(all_importance %>% 
 			 	filter(feature_type == "Expression") %>%
 			 	slice_tail(n = 25), 
-			 aes(x=Importance,y=Variable, fill = interaction)) + 
+			 aes(x=Importance,y=gene, fill = interaction)) + 
 	geom_col() +
 	labs(y='',fill='',x='Feature Importance') +
 	BerginskiRMisc::theme_berginski() +
@@ -83,7 +87,7 @@ BerginskiRMisc::trimImage(here('figures/single_model_expression/importance_box.p
 ```
 
 ```{r}
-summary(lm(Importance ~ class + 0, all_importance %>% filter(feature_type == "Activation")))
+summary(lm(Importance ~ class + 0, all_importance %>% filter(feature_type == "Inhibition")))
 
 summary(lm(Importance ~ feature_type, all_importance))
 ```
