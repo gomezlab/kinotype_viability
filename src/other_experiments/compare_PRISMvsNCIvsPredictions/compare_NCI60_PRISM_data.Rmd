@@ -1,0 +1,52 @@
+---
+title: "NCI60 vs predictions vs PRISM comparison"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(Metrics)
+```
+
+```{r}
+PRISM = read_csv(here('data/PRISM/secondary/secondary-screen-dose-response-curve-parameters.csv'))
+NCI_PRISM_matches = read_csv(here('results/NCI_PRISM_matches.csv'))
+```
+
+
+```{r}
+PRISM_IC50s = PRISM %>% 
+	select(depmap_id, ccle_name, ic50, name, passed_str_profiling) %>% 
+	filter(passed_str_profiling == TRUE) %>% 
+	filter(!is.na(ic50))
+
+NCI_IC50s = read_csv(here('data/NCI60/IC50.csv'))
+
+NCI_PRISM_IC50s = NCI_IC50s %>% 
+	select(NSC, CELL_NAME, AVERAGE) %>% 
+	left_join(PRISM_NCI_cell_lines, by = c('CELL_NAME' = 'ALMANAC_NAME')) %>% 
+	filter(CELL_NAME %in% PRISM_NCI_cell_lines$ALMANAC_NAME) %>% 
+	filter(NSC %in% NCI_PRISM_matches$NSC) %>% 
+	left_join(NCI_PRISM_matches, by = 'NSC') %>% 
+	select(-cid, -NCI_SID) %>% 
+	left_join(PRISM_IC50s, 
+						by = c('DepMap_ID' = 'depmap_id', 'PRISM_name' = 'name')) %>% 
+	filter(!is.na(ic50)) %>% 
+	mutate(ic50 = log10(ic50)) %>% 
+	filter(ic50 > -9 & ic50 < 10)
+
+NCI_PRISM_IC50s %>% 
+	ggplot(aes(ic50, AVERAGE)) +
+	geom_hex() +
+	scale_fill_gradient(low="lightblue1",high="darkblue",trans="log10") +
+	geom_smooth() +
+	labs(title = paste0('Correlation = ',
+											cor(NCI_PRISM_IC50s$ic50, NCI_PRISM_IC50s$AVERAGE),)) + 
+	geom_abline(intercept = 0, slope = 1, size = 0.5, colour = 'red')
+	# xlim(0,1.5) +
+	# ylim(0,1.5)
+
+ggsave(here('figures/NCI60_vs_PRISM_correlation.png'), height = 7, width = 10)
+```
+
