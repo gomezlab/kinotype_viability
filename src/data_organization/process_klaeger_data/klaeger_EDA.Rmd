@@ -76,3 +76,65 @@ for (target in unique(klaeger_full_tidy$gene_name)) {
 	ggsave(here('figures/klaeger_viability_EDA',paste0(target,'.png')), plot_set)
 }
 ```
+
+```{r}
+klaeger_for_plot = klaeger_full_tidy %>%
+	mutate(gene_name = ifelse(gene_name == "HIST2H2BE;HIST1H2BB;HIST1H2BO;HIST1H2BJ;HIST3H2BB;HIST1H2BA","HIST",gene_name)) %>%
+	mutate(gene_name = ifelse(gene_name == "CSNK2A1;CSNK2A3","CSNK2A(1|3)",gene_name)) %>%
+	mutate(gene_name = ifelse(gene_name == "PIP4K2A;PIP4K2B","PIP4K2(A|B)",gene_name)) %>%
+	mutate(gene_name = ifelse(gene_name == "FAM58A;FAM58BP","FAM58(A|BP)",gene_name)) %>%
+	mutate(gene_name = ifelse(gene_name == "EIF2S3;EIF2S3L","EIF2S3(L)",gene_name)) %>%
+	mutate(gene_name = ifelse(gene_name == "U2AF1;U2AF1L4","U2AF1(L4)",gene_name)) %>%
+	mutate(gene_name = ifelse(gene_name == "YTHDF3;YTHDF1","YTHDF(1|3)",gene_name)) %>%
+	mutate(gene_name = ifelse(gene_name == "PDPK1;PDPK2P","PDPK(1|2P)",gene_name)) %>%
+	mutate(gene_name = ifelse(gene_name == "MOB1A;MOB1B","MOB1(A|B)",gene_name))
+
+gene_hit_count = klaeger_for_plot %>% 
+	group_by(gene_name) %>% 
+	summarise(percent_diff = mean(relative_intensity != 1)) %>% 
+	mutate(num_char = nchar(as.character(gene_name))) %>%
+	arrange(desc(percent_diff))
+
+drug_hit_count = klaeger_for_plot %>% 
+	group_by(drug) %>% 
+	summarise(percent_diff = mean(relative_intensity != 1)) %>% 
+	arrange(percent_diff)
+
+drug_conc_order = crossing(drug = as.factor(drug_hit_count$drug), 
+													conc = sort(unique(klaeger_for_plot$concentration_M), decreasing = T)) %>% 
+	mutate(drug = fct_relevel(drug,drug_hit_count$drug)) %>% 
+	arrange(drug, desc(conc)) %>% 
+	mutate(drug_conc = paste0(drug,"-",conc))
+
+klaeger_for_plot = klaeger_for_plot %>%
+	mutate(drug = fct_relevel(as.factor(drug), as.character(drug_hit_count$drug)),
+				 gene_name = fct_relevel(as.factor(gene_name), as.character(gene_hit_count$gene_name))) %>%
+	mutate(relative_intensity_trun = ifelse(relative_intensity > 2,2,relative_intensity)) %>%
+	mutate(drug_conc = paste0(drug,"-",concentration_M)) %>%
+	mutate(drug_conc = fct_relevel(as.factor(drug_conc),drug_conc_order$drug_conc)) %>%
+	mutate(drug_conc_label = ifelse(concentration_M == 1e-07,as.character(drug),""))
+
+ggplot(klaeger_for_plot,
+			 aes(x=gene_name, y=drug_conc, fill=relative_intensity_trun)) +
+	geom_tile() +
+	# scale_fill_distiller(type = 'div', palette = 'BrBG') +
+	scale_fill_gradient2(high=rgb(84, 12, 70,maxColorValue = 255),
+											 mid='white',
+											 low=rgb(47, 117, 19,maxColorValue = 255),
+											 midpoint = 1) +
+	theme(axis.text.x = element_text(angle = 90, vjust = 0.5),
+				axis.ticks.y = element_blank(),
+				axis.text.x.top = element_text(vjust = 0.5,hjust = 0),
+				legend.justification = c(1, 0), legend.position = c(1, 0),
+				legend.text = element_text(size=25),
+				legend.key.size = unit(1.5, 'cm')) +
+	scale_x_discrete(position = "top") +
+	BerginskiRMisc::theme_berginski() +
+	labs(x='',y='',fill='') +
+	scale_y_discrete(labels = klaeger_for_plot$drug_conc_label,
+									 breaks = klaeger_for_plot$drug_conc) +
+	NULL
+
+ggsave(here('figures/klaeger_visualizations/intensity_heatmap.png'),width=52,height=26, limitsize = F)
+BerginskiRMisc::trimImage(here('figures/klaeger_visualizations/intensity_heatmap.png'))
+```
