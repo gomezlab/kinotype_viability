@@ -7,19 +7,22 @@ output: html_document
 library(tidyverse)
 library(here)
 library(Metrics)
+
+knitr::opts_knit$set(root.dir = here())
 ```
 
 ```{r}
 PRISM = read_csv(here('data/PRISM/secondary/secondary-screen-dose-response-curve-parameters.csv')) %>% 
-		filter(passed_str_profiling == TRUE) 
-NCI_dose_response = read_csv(here('data/NCI60/DOSERESP.csv'))
-NCI_IC50s = read_csv(here('data/NCI60/IC50.csv'))
-NCI_PRISM_matches = read_csv(here('results/NCI_PRISM_matches.csv')) %>% 
+	filter(passed_str_profiling == TRUE) 
+NCI_dose_response = read_csv(here('data/NCI60/DOSERESP.csv.gz'))
+NCI_IC50s = read_csv(here('data/NCI60/IC50.csv.gz'))
+NCI_PRISM_matches = read_csv(here('results/NCI_PRISM_comparison/NCI_PRISM_matches.csv')) %>% 
 	left_join(PRISM %>% select(name, broad_id), by = c('PRISM_name' = 'name')) %>% 
 	unique()
-PRISM_NCI_cell_lines = read_csv(here('results/matched_ALMANAC_cell_lines.csv'))
-```
+PRISM_NCI_cell_lines = read_csv(here('results/NCI_PRISM_comparison/matched_ALMANAC_cell_lines.csv'))
 
+dir.create(here('figures/NCI_PRISM_comparison'), showWarnings = F)
+```
 
 ```{r}
 #compare PRISM and NCI60 IC50s
@@ -48,12 +51,10 @@ NCI_PRISM_IC50s %>%
 	scale_fill_gradient(low="lightblue1",high="darkblue",trans="log10") +
 	geom_smooth() +
 	labs(title = paste0('Correlation = ',
-											cor(NCI_PRISM_IC50s$ic50, NCI_PRISM_IC50s$AVERAGE),)) + 
+											cor(NCI_PRISM_IC50s$ic50, NCI_PRISM_IC50s$AVERAGE))) + 
 	geom_abline(intercept = 0, slope = 1, size = 0.5, colour = 'red')
-	# xlim(0,1.5) +
-	# ylim(0,1.5)
 
-ggsave(here('figures/NCI60_vs_PRISM_correlation.png'), height = 7, width = 10)
+ggsave(here('figures/NCI_PRISM_comparison/NCI60_vs_PRISM_correlation.png'), height = 7, width = 10)
 ```
 
 ```{r}
@@ -75,17 +76,16 @@ NCI_doses = NCI_dose_response_filtered %>%
 
 broad_id_NCI_conc = crossing('broad_id' = NCI_PRISM_matches %>% 
 														 	pull(broad_id), 
-																 'NCI_conc' = unique(NCI_doses$CONCENTRATION))
- 
+														 'NCI_conc' = unique(NCI_doses$CONCENTRATION))
+
 response_curve_parameters = PRISM %>% 
 	filter(name %in% NCI_PRISM_matches$PRISM_name) %>% 
- #filter lower limit values <= 1
+	#filter lower limit values <= 1
 	filter(lower_limit <= 1) %>%
 	left_join(broad_id_NCI_conc) %>% 
- #convert log molar to molar 
+	#convert log molar to molar 
 	mutate(NCI_conc = 10^(NCI_conc)) %>% 
-	mutate(
-		imputed_viability = lower_limit + (upper_limit - lower_limit)/(1 + exp(slope * (log(NCI_conc*10^6) - log(ec50))))) %>%
+	mutate(imputed_viability = lower_limit + (upper_limit - lower_limit)/(1 + exp(slope * (log(NCI_conc*10^6) - log(ec50))))) %>%
 	select(broad_id, name, depmap_id,NCI_conc,imputed_viability) %>% 
 	left_join(NCI_PRISM_matches %>% select(broad_id,NSC)) %>%
 	group_by(broad_id, name, NSC, depmap_id, NCI_conc) %>%
@@ -94,11 +94,11 @@ response_curve_parameters = PRISM %>%
 		imputed_viability < 0 ~ 0,
 		TRUE ~ imputed_viability
 	)) %>% 
-	write_rds(here('results/PRISM_imputed_for_NCI60_tidy.rds'), compress = 'gz')
+	write_rds(here('results/NCI_PRISM_comparison/PRISM_imputed_for_NCI60_tidy.rds'), compress = 'gz')
 ```
 
 ```{r}
-PRISM_imputed_for_NCI_60 = read_rds(here('results/PRISM_imputed_for_NCI60_tidy.rds'))
+PRISM_imputed_for_NCI_60 = read_rds(here('results/NCI_PRISM_comparison/PRISM_imputed_for_NCI60_tidy.rds'))
 
 NCI_PRISM_combined_viabilities = PRISM_imputed_for_NCI_60 %>% 
 	left_join(
@@ -119,31 +119,32 @@ NCI_PRISM_combined_viabilities = PRISM_imputed_for_NCI_60 %>%
 	mutate(AVERAGE_PTC = case_when(
 		AVERAGE_PTC >=1 ~ 1,
 		TRUE ~ AVERAGE_PTC
-	))
+	)) %>%
+	identity()
+```
 
-NCI_PRISM_combined_viabilities %>% 
-	ggplot(aes(imputed_viability, AVERAGE_PTC)) +
-	geom_hex() +
-	scale_fill_gradient(low="lightblue1",high="darkblue",trans="log10") +
-	geom_smooth() +
-	labs(title = paste0('R\u00B2 = ', 
-											round(
-												(cor(NCI_PRISM_combined_viabilities$imputed_viability, 
-														NCI_PRISM_combined_viabilities$AVERAGE_PTC)^2),
-												2),
-											' / RMSE = ',
-											round(
-												rmse(
-													NCI_PRISM_combined_viabilities$AVERAGE_PTC,
-													NCI_PRISM_combined_viabilities$imputed_viability),
-												2)),
-			 x = "PRISM Viability",
-			 y = "NCI-60 Viability") + 
-	geom_abline(intercept = 0, slope = 1, size = 0.5, colour = 'red') 
-	# xlim(0,1.5) +
-	# ylim(0,1.5)
 
-ggsave(here('figures/NCI60_vs_PRISM_viability_correlation.png'), height = 7, width = 10)	
-	
+```{r}
+rsq_val = cor(NCI_PRISM_combined_viabilities$imputed_viability, NCI_PRISM_combined_viabilities$AVERAGE_PTC)^2
+
+rmse_val = rmse(NCI_PRISM_combined_viabilities$imputed_viability, NCI_PRISM_combined_viabilities$AVERAGE_PTC)
+
+plot_title = paste0('R\u00B2: ', signif(rsq_val,3),' / RMSE: ', signif(rmse_val,3))
+
+ggplot(NCI_PRISM_combined_viabilities, aes(imputed_viability, AVERAGE_PTC)) +
+	stat_binhex(aes(fill=log10(..count..))) +
+	# geom_hex() +
+	geom_abline(slope = 1, intercept = 0, color='black', alpha=0.5, linetype = 2) +
+	geom_smooth(color = 'red') +
+	labs(title = plot_title,
+			 x = "PRISM Imputed Viability",
+			 y = "NCI-60 Viability",
+			 fill = "Log10 #\nViability\nValues") +
+	scale_fill_viridis_c() +
+	BerginskiRMisc::theme_berginski() +
+	theme(aspect.ratio = 1:1, legend.margin=margin(0,0,0,0), legend.box.margin=margin(-10,-5,-10,-10))
+
+ggsave(here('figures/NCI_PRISM_comparison/NCI60_vs_PRISM_viability_correlation.png'),width=3.5,height=3.5)	
+BerginskiRMisc::trimImage(here('figures/NCI_PRISM_comparison/NCI60_vs_PRISM_viability_correlation.png'))
 ```
 
