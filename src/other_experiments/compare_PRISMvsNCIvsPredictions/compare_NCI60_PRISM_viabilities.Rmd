@@ -1,0 +1,149 @@
+---
+title: "NCI60 vs predictions vs PRISM comparison"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(Metrics)
+```
+
+```{r}
+PRISM = read_csv(here('data/PRISM/secondary/secondary-screen-dose-response-curve-parameters.csv')) %>% 
+		filter(passed_str_profiling == TRUE) 
+NCI_dose_response = read_csv(here('data/NCI60/DOSERESP.csv'))
+NCI_IC50s = read_csv(here('data/NCI60/IC50.csv'))
+NCI_PRISM_matches = read_csv(here('results/NCI_PRISM_matches.csv')) %>% 
+	left_join(PRISM %>% select(name, broad_id), by = c('PRISM_name' = 'name')) %>% 
+	unique()
+PRISM_NCI_cell_lines = read_csv(here('results/matched_ALMANAC_cell_lines.csv'))
+```
+
+
+```{r}
+#compare PRISM and NCI60 IC50s
+
+PRISM_IC50s = PRISM %>% 
+	select(depmap_id, ccle_name, ic50, name, passed_str_profiling) %>% 
+	filter(passed_str_profiling == TRUE) %>% 
+	filter(!is.na(ic50))
+
+NCI_PRISM_IC50s = NCI_IC50s %>% 
+	select(NSC, CELL_NAME, AVERAGE) %>% 
+	left_join(PRISM_NCI_cell_lines, by = c('CELL_NAME' = 'ALMANAC_NAME')) %>% 
+	filter(CELL_NAME %in% PRISM_NCI_cell_lines$ALMANAC_NAME) %>% 
+	filter(NSC %in% NCI_PRISM_matches$NSC) %>% 
+	left_join(NCI_PRISM_matches, by = 'NSC') %>% 
+	select(-cid, -NCI_SID) %>% 
+	left_join(PRISM_IC50s, 
+						by = c('DepMap_ID' = 'depmap_id', 'PRISM_name' = 'name')) %>% 
+	filter(!is.na(ic50)) %>% 
+	mutate(ic50 = log10(ic50)) %>% 
+	filter(ic50 > -9 & ic50 < 10)
+
+NCI_PRISM_IC50s %>% 
+	ggplot(aes(ic50, AVERAGE)) +
+	geom_hex() +
+	scale_fill_gradient(low="lightblue1",high="darkblue",trans="log10") +
+	geom_smooth() +
+	labs(title = paste0('Correlation = ',
+											cor(NCI_PRISM_IC50s$ic50, NCI_PRISM_IC50s$AVERAGE),)) + 
+	geom_abline(intercept = 0, slope = 1, size = 0.5, colour = 'red')
+	# xlim(0,1.5) +
+	# ylim(0,1.5)
+
+ggsave(here('figures/NCI60_vs_PRISM_correlation.png'), height = 7, width = 10)
+```
+
+```{r}
+#compare PRISM and NCI-60 cell viabilities
+
+#First, impute PRISM cell vaibilities at NCI-60 doses
+
+#NCI-60 preprocessing
+NCI_dose_response_filtered = NCI_dose_response %>% 
+	select(NSC, CONCENTRATION, CELL_NAME, AVERAGE_PTC) %>% 
+	filter(NSC %in% NCI_PRISM_matches$NSC) %>% 
+	filter(CELL_NAME %in% PRISM_NCI_cell_lines$ALMANAC_NAME) %>% 
+	left_join(select(PRISM_NCI_cell_lines, -PRISM_NAME), by = c('CELL_NAME' = 'ALMANAC_NAME')) %>%
+	left_join(NCI_PRISM_matches, by = 'NSC') 
+
+NCI_doses = NCI_dose_response_filtered %>% 
+	group_by(CONCENTRATION) %>% 
+	summarise(n = n())
+
+broad_id_NCI_conc = crossing('broad_id' = NCI_PRISM_matches %>% 
+														 	pull(broad_id), 
+																 'NCI_conc' = unique(NCI_doses$CONCENTRATION))
+ 
+response_curve_parameters = PRISM %>% 
+	filter(name %in% NCI_PRISM_matches$PRISM_name) %>% 
+ #filter lower limit values <= 1
+	filter(lower_limit <= 1) %>%
+	left_join(broad_id_NCI_conc) %>% 
+ #convert log molar to molar 
+	mutate(NCI_conc = 10^(NCI_conc)) %>% 
+	mutate(
+		imputed_viability = lower_limit + (upper_limit - lower_limit)/(1 + exp(slope * (log(NCI_conc*10^6) - log(ec50))))) %>%
+	select(broad_id, name, depmap_id,NCI_conc,imputed_viability) %>% 
+	left_join(NCI_PRISM_matches %>% select(broad_id,NSC)) %>%
+	group_by(broad_id, name, NSC, depmap_id, NCI_conc) %>%
+	summarise(imputed_viability = mean(imputed_viability)) %>% 
+	mutate(imputed_viability = case_when(
+		imputed_viability < 0 ~ 0,
+		TRUE ~ imputed_viability
+	)) %>% 
+	write_rds(here('results/PRISM_imputed_for_NCI60_tidy.rds'), compress = 'gz')
+```
+
+```{r}
+PRISM_imputed_for_NCI_60 = read_rds(here('results/PRISM_imputed_for_NCI60_tidy.rds'))
+
+NCI_PRISM_combined_viabilities = PRISM_imputed_for_NCI_60 %>% 
+	left_join(
+		NCI_dose_response_filtered %>% 
+			select(NSC, CONCENTRATION, DepMap_ID, AVERAGE_PTC) %>%
+			rename('depmap_id' = DepMap_ID,
+						 'NCI_conc' = CONCENTRATION) %>% 
+			#convert log molar to molar
+			mutate(NCI_conc = 10^(NCI_conc)),
+		by = c('NSC', 'depmap_id', 'NCI_conc')
+	) %>% 
+	filter(!is.na(AVERAGE_PTC)) %>% 
+	mutate(AVERAGE_PTC = AVERAGE_PTC/100) %>% 
+	mutate(AVERAGE_PTC = case_when(
+		AVERAGE_PTC < 0 ~ 0,
+		TRUE ~ AVERAGE_PTC
+	)) %>%
+	mutate(AVERAGE_PTC = case_when(
+		AVERAGE_PTC >=1 ~ 1,
+		TRUE ~ AVERAGE_PTC
+	))
+
+NCI_PRISM_combined_viabilities %>% 
+	ggplot(aes(imputed_viability, AVERAGE_PTC)) +
+	geom_hex() +
+	scale_fill_gradient(low="lightblue1",high="darkblue",trans="log10") +
+	geom_smooth() +
+	labs(title = paste0('R\u00B2 = ', 
+											round(
+												(cor(NCI_PRISM_combined_viabilities$imputed_viability, 
+														NCI_PRISM_combined_viabilities$AVERAGE_PTC)^2),
+												2),
+											' / RMSE = ',
+											round(
+												rmse(
+													NCI_PRISM_combined_viabilities$AVERAGE_PTC,
+													NCI_PRISM_combined_viabilities$imputed_viability),
+												2)),
+			 x = "PRISM Viability",
+			 y = "NCI-60 Viability") + 
+	geom_abline(intercept = 0, slope = 1, size = 0.5, colour = 'red') 
+	# xlim(0,1.5) +
+	# ylim(0,1.5)
+
+ggsave(here('figures/NCI60_vs_PRISM_viability_correlation.png'), height = 7, width = 10)	
+	
+```
+
