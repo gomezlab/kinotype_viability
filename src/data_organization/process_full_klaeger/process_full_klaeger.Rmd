@@ -1,0 +1,124 @@
+---
+title: "Process Full Klaeger Data"
+author: "Matthew Berginski"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(janitor)
+library(tictoc)
+
+knitr::opts_knit$set(root.dir = here())
+```
+
+This code processes what appear to be complete outputs from Klaeger et al, without any filtering to the hit confidence levels. These files look very similar to the supplemental file we've previously used to process this data, but is spread out over ~240 CSV files. As such, I've re-written the processing to deal with collecting the data and gluing everything together.
+
+```{r}
+tic()
+process_klaeger_file <- function(data_file) {
+	temp = read_csv(data_file,show_col_types = FALSE) %>%
+		clean_names()
+	
+	if (temp$lysate[1] == "4 cell line mix" & temp$beads[1] == "Kinobeads") {
+		temp %>%
+			select(drug,gene_name,contains('relative'))	%>%
+			return()
+	} else {
+		return(data.frame())
+	}
+}
+
+klaeger_complete = Sys.glob(here('data/Klaeger_all_genes/*.csv')) %>%
+	map(~process_klaeger_file(.)) %>%
+	reduce(bind_rows) %>%
+	pivot_longer(-c(drug,gene_name), 
+							 names_to = "concentration_str", 
+							 values_to = "relative_intensity") %>%
+	mutate(concentration_M = case_when(
+		concentration_str == "relative_intensity_dmso" ~ 0,
+		concentration_str == "relative_intensity_3_n_m" ~ 3e-9,
+		concentration_str == "relative_intensity_10_n_m" ~ 10e-9,
+		concentration_str == "relative_intensity_30_n_m" ~ 30e-9,
+		concentration_str == "relative_intensity_100_n_m" ~ 100e-9,
+		concentration_str == "relative_intensity_300_n_m" ~ 300e-9,
+		concentration_str == "relative_intensity_1000_n_m" ~ 1000e-9,
+		concentration_str == "relative_intensity_3000_n_m" ~ 3000e-9,
+		concentration_str == "relative_intensity_30000_n_m" ~ 30000e-9,
+		TRUE ~ NA_real_
+	)) %>%
+	#A few of the compounds were tested to concentrations lower than 3nm, but there
+	#are so few that I don't want to try to include them in the modeling. Since the
+	#above case_when doesn't include anything below 1nm, these get caught by the
+	#final TRUE ~ NA_real_ and I get rid of them here.
+	filter(! is.na(concentration_M)) %>%
+	select(-concentration_str) %>%
+	identity()
+
+#Now to built a data set that contains all the genes that are missing from the
+#individual files. I assume this is because every gene is not detected in every
+#sample, as such I'll impute all of the missing combinations as 1 to indicate no
+#differences from DMSO.
+missing_combos = crossing(drug = unique(klaeger_complete$drug),
+													gene_name = unique(klaeger_complete$gene_name),
+													concentration_M = unique(klaeger_complete$concentration_M)) %>%
+	setdiff(klaeger_complete %>% select(drug,gene_name,concentration_M)) %>%
+	mutate(relative_intensity = 1)
+
+klaeger_complete_full = bind_rows(klaeger_complete, missing_combos)
+
+toc()
+```
+
+Now to deal with all the NAs. These are caused by certain combinations of drug/concentration not being included in the data files. There are about ~10 cases where this appears in the data and the relative intensity is otherwise fully filled for the genes with data in those files. So I think the best course of action is the interpolate these missing files by simply fitting a line between the two closest non-misisng concentrations and then pulling out the interpolated value at the missing concentration.
+
+```{r}
+klaeger_conc = sort(unique(klaeger_complete_full$concentration_M))
+
+tic()
+NA_entries = klaeger_complete_full %>% filter(is.na(relative_intensity))
+
+extrap_points = NA_entries
+
+for (this_row in 1:dim(NA_entries)[1]) {
+	this_combo_data = klaeger_complete_full %>%
+		filter(drug == NA_entries$drug[this_row], gene_name == NA_entries$gene_name[this_row])
+	
+	lower_bound = max(klaeger_conc[klaeger_conc < NA_entries$concentration_M[this_row]], na.rm = T)
+	upper_bound = min(klaeger_conc[klaeger_conc > NA_entries$concentration_M[this_row]], na.rm = T)
+	
+	#This happens when the upper bound search returns nothing, indicating that the
+	#extrapolation data point is the max concentration. In this case, we'll just
+	#copy over the value from the lower bound concentration
+	if (is.infinite(upper_bound)) {
+		extrap_points$relative_intensity[this_row] = this_combo_data %>%
+			filter(concentration_M == lower_bound) %>%
+			pull(relative_intensity)
+	} else {
+		combo_surround = this_combo_data %>%
+			filter(concentration_M == lower_bound |concentration_M == upper_bound)
+		
+		extrap_points$relative_intensity[this_row] = approx(
+			x = log10(combo_surround$concentration_M), 
+			y = combo_surround$relative_intensity, 
+			xout = log10(NA_entries$concentration_M[this_row]))$y
+	}
+}
+toc()
+
+klaeger_complete_full_no_NA = klaeger_complete_full %>% 
+	filter(! is.na(relative_intensity)) %>%
+	bind_rows(extrap_points) %>%
+	arrange(drug, gene_name, concentration_M)
+```
+
+Now I need to deal with some data points in the data that are ... unlikely at best. There are some data points where the values are improbably high, say in the 100s or 1000s. Since these values all represent a ratio between the peptides observed at a given concentration in comparison to DMSO, I'm going to assume that these values are the result of some sort of issue with the the DMSO value being anomalously low and thus throwing off the ratio. There isn't any obvious way to deal with these values, so I'll simply truncate any value at the above the 99th percentile to the 99th percentile value.
+
+```{r}
+max_val = quantile(klaeger_complete_full_no_NA$relative_intensity, 0.99, na.rm=T)
+klaeger_full = klaeger_complete_full_no_NA %>%
+	mutate(relative_intensity = ifelse(relative_intensity >= max_val, max_val, relative_intensity)) %>%
+	write_rds(here('results/single_model/klaeger_complete_tidy.rds'), compress = 'gz')
+```
