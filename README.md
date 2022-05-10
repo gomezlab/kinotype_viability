@@ -4,7 +4,7 @@
 
 This repository contains the source code used to organize the data and build models associated with:
 
-Berginski ME, Joisa C, et al. In process
+Berginski ME, Joisa C, et al. Kinome Inhibition States and Multiomics Data Enable Prediction of Cell Viability in Diverse Cancer Types, [bioRvix](https://www.biorxiv.org/content/10.1101/2022.04.08.487646v1)
 
 ## Audience
 
