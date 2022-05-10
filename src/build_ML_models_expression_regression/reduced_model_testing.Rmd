@@ -1,0 +1,98 @@
+---
+title: "Reduced Model Testing"
+author: "Matthew Berginski"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(tidymodels)
+library(tictoc)
+library(peakRAM)
+
+knitr::opts_knit$set(root.dir = here())
+```
+
+```{r}
+klaeger_wide = read_rds(here('results/klaeger_full_tidy.rds')) %>%
+	mutate(act_gene_name = paste0("act_",gene_name)) %>%
+	select(-gene_name) %>%
+	pivot_wider(names_from = act_gene_name, values_from = relative_intensity)
+
+PRISM_klaeger_imputed = read_rds(here('results/PRISM_klaeger_imputed_tidy.rds'))
+
+CCLE_data = read_rds(here('results/single_model/full_CCLE_expression_set_for_ML.rds'))
+
+PRISM_klaeger_imputed = PRISM_klaeger_imputed %>%
+	filter(depmap_id %in% CCLE_data$DepMap_ID) %>%
+	ungroup()
+
+data_for_model_production = read_rds(here('results/single_model_expression_regression/full_model_data_set_500feat.rds'))
+```
+
+```{r}
+possible_klaeger_CCLE_combos = crossing(
+	drug = unique(klaeger_wide$drug),
+	concentration_M = unique(klaeger_wide$concentration_M),
+	depmap_id = unique(CCLE_data$DepMap_ID)
+)
+
+already_tested_combos = PRISM_klaeger_imputed %>%
+	rename(concentration_M = klaeger_conc) %>%
+	select(depmap_id,drug,concentration_M) %>%
+	unique()
+
+non_tested_combos = possible_klaeger_CCLE_combos %>%
+	anti_join(already_tested_combos)
+
+not_tested_data = non_tested_combos %>%
+	left_join(klaeger_wide %>% select(drug,concentration_M,any_of(names(data_for_model_production)))) %>%
+	left_join(CCLE_data %>% 
+							select(DepMap_ID,any_of(names(data_for_model_production))),
+						by = c('depmap_id'='DepMap_ID')) %>%
+	filter(concentration_M != 0)
+```
+
+```{r}
+tic()
+dir.create(here('results/reduced_model_testing'))
+
+tree_count_results = data.frame()
+
+for (tree_count in c(1,5,10,15,seq(20,80,by=20),seq(100,500,by=100))) {
+	
+	PRISM_klaeger_recipe = recipe(target_viability ~ ., data_for_model_production) %>%
+		update_role(-starts_with("act_"),
+								-starts_with("exp_"),
+								-starts_with("dep_"),
+								-starts_with("target_"), new_role = "id variable") %>%
+		prep()
+	
+	rand_forest_spec <- rand_forest(trees = tree_count) %>% 
+		set_engine("ranger", num.threads = 14,importance = "impurity") %>%
+		set_mode("regression")
+	
+	rand_forest_wf <- workflow() %>%
+		add_model(rand_forest_spec) %>%
+		add_recipe(PRISM_klaeger_recipe)
+	
+	this_model = rand_forest_wf %>%
+		fit(data = data_for_model_production) %>%
+		extract_fit_parsnip() %>% 
+		write_rds(here('results/reduced_model_testing/',sprintf('final_model_500feat_%03dtrees.rds', tree_count)), compress = 'gz')
+	
+	ram_usage = peakRAM(read_rds(here('results/reduced_model_testing/',sprintf('final_model_500feat_%03dtrees.rds', tree_count)))) %>%
+		mutate(tree_count = tree_count)
+	
+	tree_count_results = bind_rows(
+		tree_count_results,
+		ram_usage
+	)
+}
+
+write_csv(tree_count_results,here('results/single_model_expression_regression/model_size_ram_usage.csv'))
+
+toc()
+```
