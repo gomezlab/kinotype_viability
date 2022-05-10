@@ -424,30 +424,45 @@ model_tuning_results_summary = model_tuning_results %>%
 ```
 
 ```{r}
+library(gghighlight)
+
+ram_usage = read_csv(here('results/single_model_expression_regression/model_size_ram_usage.csv'))
+
 default_results = model_tuning_results_summary %>%
 	filter(tree_count == 500)
 
 r2_plot = ggplot(model_tuning_results_summary,
 								 aes(y=r2_estimate,x=as.factor(tree_count))) +
-	geom_hline(aes(yintercept = default_results$r2_conf.low),alpha=0.25,lty = 2,color='red') +
+	geom_hline(aes(yintercept = default_results$r2_conf.low),alpha=0.25,lty = 2) +
 	# geom_point() +
-	geom_errorbar(aes(ymin=r2_conf.low,ymax=r2_conf.high)) +
+	geom_errorbar(aes(ymin=r2_conf.low,ymax=r2_conf.high), color = "blue") +
+	gghighlight(tree_count == 100,
+							unhighlighted_params = list(color = "black")) +
 	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
 	labs(x="Number of Trees",y="R\u00B2",color="# Trees") +
 	BerginskiRMisc::theme_berginski()
 
 rmse_plot = ggplot(model_tuning_results_summary,
 									 aes(y=rmse_estimate,x=as.factor(tree_count))) +
-	geom_hline(aes(yintercept = default_results$rmse_conf.high),alpha=0.25,lty = 2,color='red') +
+	geom_hline(aes(yintercept = default_results$rmse_conf.high),alpha=0.25,lty = 2) +
 	# geom_point() +
-	geom_errorbar(aes(ymin=rmse_conf.low,ymax=rmse_conf.high)) +
+	geom_errorbar(aes(ymin=rmse_conf.low,ymax=rmse_conf.high), color = 'blue') +
+	gghighlight(tree_count == 100, 
+							unhighlighted_params = list(color = "black")) +
 	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
 	labs(x="Number of Trees",y="RMSE",color="# Trees") +
 	BerginskiRMisc::theme_berginski()
 
+ram_usage_plot = ggplot(ram_usage, aes(x=as.factor(tree_count),y = Peak_RAM_Used_MiB/1024)) + 
+	geom_point(color = 'blue') +	
+	gghighlight(tree_count == 100, 
+							unhighlighted_params = list(color = "black")) +
+	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+	labs(x="Number of Trees",y="Model RAM Usage (GB)") +
+	BerginskiRMisc::theme_berginski()
+
 ggsave(here('figures/single_model_expression/rand_forest_500_feat_tree_count.png'),
-			 r2_plot + rmse_plot + plot_layout(guides = "collect") & 
-			 	theme(legend.position = 'bottom', legend.margin=margin(0,0,0,0), legend.box.margin=margin(-10,-10,-10,-10)),width=4.5,height=2.25)
+			 r2_plot + rmse_plot + ram_usage_plot, width=4.5*1.5, height=2.25)
 BerginskiRMisc::trimImage(here('figures/single_model_expression/rand_forest_500_feat_tree_count.png'))
 ```
 
