@@ -28,7 +28,7 @@ exp_interactor_type = read_rds(here('results/single_model_expression_regression/
 	mutate(Variable = paste0(type,"_",hgnc)) %>%
 	mutate(interaction = case_when(
 		direct_count >= 1 ~ "Inhibition\nInteractor",
-		T ~ "Noninterator"
+		T ~ "Noninteractor"
 	))
 ```
 
