@@ -1,0 +1,59 @@
+---
+title: "prep clinical trial kinotype data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+```
+
+```{r}
+#read in data 
+compound_match_list = read_csv(here('data/Clinical_Data/TCGA/TCGA_Klaeger_match_list.csv'))
+
+LINCS_klaeger_data_wide = read_csv(here('results/all_klaeger_LINCS_data_for_ml_wide.csv'))
+
+clinical_data = read_csv(here('results/all_clinical_data_for_ml.csv'))
+```
+
+```{r}
+#fill in / correct drug names
+drug_names = clinical_data %>% 
+	select(drug_name) %>% 
+	unique()
+
+matched_drug_names = drug_names %>% 
+	left_join(
+		compound_match_list %>% 
+			select(klaeger_name, tcga_name) %>% 
+			rename(drug_name = tcga_name) %>% 
+			unique()
+	) %>%
+	mutate(
+		klaeger_name = case_when(
+			drug_name == "alisertib+nab-paclitaxel" ~ "Alistertib",
+			drug_name == "Avelumab+Axitinib" ~ "Axitinib",
+			drug_name == "cabozantinib" ~ "Cabozantinib",
+			drug_name == "DOCETAXEL+VANDETANIB" ~ "Vandetanib",
+			drug_name == "Imatinib" ~ "Imatinib",
+			drug_name == "sorafenib" ~ "Sorafenib",
+			drug_name == "Sunitinib" ~ "Sunitinib",
+			drug_name == "vemurafenib" ~ "Vemurafenib", 
+			T ~ klaeger_name
+		)
+	)
+```
+
+```{r}
+clinical_kinotype_data = clinical_data %>% 
+	left_join(matched_drug_names) %>% 
+	rename(drug = klaeger_name) %>% 
+	select(-drug_name) %>% 
+	rename(clinical_data_origin = origin) %>% 
+	inner_join(LINCS_klaeger_data_wide) %>% 
+	rename(kinotype_data_origin = origin) %>% 
+	drop_na() %>% 
+	write_csv(here('results/clinical_kinotype_data_for_ml.csv'))
+```
+

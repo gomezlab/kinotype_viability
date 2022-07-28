@@ -19,7 +19,7 @@ knitr::opts_knit$set(root.dir = here())
 PRISM_sample_info = read_csv(here('data/CCLE_data/sample_info.csv')) %>%
 	filter(cell_line_name == "SUM-159PT" | cell_line_name == "HCC1806") 
 
-testing_results = read_rds(here('results/validation_results/DK_compound_validation_screen.rds')) %>% 
+CAMtesting_results = read_rds(here('results/validation_results/DK_compound_validation_screen.rds')) %>% 
 	filter(! qc_fail) %>% 
 	left_join(PRISM_sample_info %>% select(stripped_cell_line_name,DepMap_ID), by=c('cell_line'='stripped_cell_line_name')) %>%
 	rename(drug = compound, actual_viability = viability, depmap_id = DepMap_ID) %>%

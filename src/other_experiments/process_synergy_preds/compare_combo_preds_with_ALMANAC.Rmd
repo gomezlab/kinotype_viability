@@ -1,0 +1,239 @@
+---
+title: "Naive Synergy Scores"
+author: "Chinmaya Joisa"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(broom)
+library(rstatix)
+library(patchwork)
+library(conflicted)
+library(attempt)
+library(Metrics)
+conflict_prefer("filter", "dplyr")
+conflict_prefer("slice", "dplyr")
+conflict_prefer("if_else", "dplyr")
+```
+
+```{r}
+#read in data
+
+klaeger_ALMANAC_matches = read_csv(here('results/klaeger_ALMANAC_matches.csv'))
+ALMANAC_CCLE_cell_line_matches = read_csv(here('results/matched_ALMANAC_cell_lines.csv'))
+
+ALMANAC = read_csv(here('data/ALMANAC/ComboDrugGrowth_Nov2017.csv'))
+klaeger = read_rds(here('results/klaeger_full_tidy.rds'))
+
+sample_info = sample_info %>%
+	mutate(cell_line_name_extra = paste0(cell_line_name, "\n",lineage_subtype, "\n",lineage_sub_subtype))
+
+CCLE_data = read_rds(here('results/full_CCLE_expression_set_for_ML.rds'))
+
+ALMANAC_lines = sample_info %>% 
+	filter(DepMap_ID %in% ALMANAC_CCLE_cell_line_matches$DepMap_ID) %>%
+	filter(DepMap_ID %in% CCLE_data$DepMap_ID)
+```
+
+```{r}
+#pre-process ALMANAC
+ALMANAC_processed = ALMANAC %>% 
+	select(COMBODRUGSEQ, 
+				 CELLNAME, 
+				 CELLNBR, 
+				 PANEL, 
+				 NSC1, 
+				 NSC2, 
+				 CONC1,
+				 CONC2,
+				 TESTVALUE,
+				 CONTROLVALUE) %>% 
+  drop_na() %>%  
+  #filter cell lines in L1000
+  filter(CELLNAME %in% ALMANAC_CCLE_cell_line_matches$ALMANAC_NAME)
+```
+
+```{r}
+#processing combo predictions
+ALMANAC_data_table = ALMANAC_lines %>% 
+	select(DepMap_ID) %>% 
+	mutate(file = here('results/synergy_predictions/per_cell_line/', paste0(DepMap_ID, '.rds')))
+
+All_ALMANAC_synergy_data = data.frame()
+for(i in 1:dim(ALMANAC_data_table)[1]) {
+	this_ALMANAC_data = read_rds(ALMANAC_data_table$file[i])
+		All_ALMANAC_synergy_data = bind_rows(All_ALMANAC_synergy_data, this_ALMANAC_data)
+}
+```
+
+```{r}
+#match concentrations between klaeger and ALMANAC
+ALMANAC_doses = ALMANAC_processed %>% 
+	group_by(CONC1, CONC2) %>% 
+	summarise(n = n())
+
+ALMANAC_unique_doses_1 = ALMANAC_doses %>%
+	ungroup() %>% 
+	select(CONC1) %>%
+	rename(conc = CONC1) %>% 
+	unique()
+ALMANAC_unique_doses_2 = ALMANAC_doses %>%
+	ungroup() %>% 
+	select(CONC2) %>% 
+	rename(conc = CONC2) %>% 
+	unique()
+ALMANAC_unique_doses = bind_rows(
+	ALMANAC_unique_doses_1, ALMANAC_unique_doses_2
+) %>% 
+	unique()
+
+klaeger_unique_doses = klaeger %>%
+  select(concentration_M) %>% 
+  unique() %>% 
+	rename(conc = concentration_M)
+
+matched_doses = ALMANAC_unique_doses %>% 
+	filter(conc %in% klaeger_unique_doses$conc) %>% 
+	mutate(klaeger_conc = conc)
+
+ALMANAC_unmatched_doses = ALMANAC_unique_doses %>% 
+	filter(!conc %in% matched_doses$conc)
+
+nearest_klaeger_concentration = function(concentration, all_klaeger_concentrations) {
+differences = all_klaeger_concentrations %>% 
+	filter(conc != 0) %>% 
+	mutate('difference' = abs(conc - concentration)) %>%  
+	arrange(difference) 
+min_difference = differences$conc[1]
+return(min_difference)
+}
+
+ALMANAC_nearest_klaeger_doses = ALMANAC_unmatched_doses %>% 
+	mutate(nearest_klaeger_dose = map(conc, ~nearest_klaeger_concentration(., klaeger_unique_doses))) %>% 
+	as.data.frame() %>% 
+	unnest(cols = c(nearest_klaeger_dose))
+```
+
+```{r}
+possible_klaeger_combos = crossing(
+  unique(klaeger$drug),
+  unique(klaeger$drug)
+) %>% 
+  rename(klaeger_name_1 = 1,
+         klaeger_name_2 = 2)
+
+klaeger_combos_processed = possible_klaeger_combos %>% 
+  left_join(klaeger_ALMANAC_matches %>% 
+  						rename(klaeger_name_1 = klaeger_name) %>% 
+              select(klaeger_name_1, NSC) %>% 
+              unique()) %>%
+  rename(NSC1 = NSC) %>% 
+  filter(!is.na(NSC1)) %>% 
+  left_join(klaeger_ALMANAC_matches %>% 
+  						rename(klaeger_name_2 = klaeger_name) %>% 
+              select(klaeger_name_2, NSC) %>% 
+              unique()) %>%
+  rename(NSC2 = NSC) %>% 
+  filter(!is.na(NSC2))
+
+ALMANAC_prediction_comparitive_data = klaeger_combos_processed %>% 
+  left_join(ALMANAC_processed %>% 
+              select(-CELLNBR)) %>%
+  bind_rows(
+  klaeger_combos_processed %>% 
+  left_join(ALMANAC_processed %>% 
+              select(-CELLNBR),
+            by = c("NSC1" = "NSC2", "NSC2" = "NSC1"))
+  ) %>% 
+  unique() %>% 
+  drop_na() %>% 
+  #add in depmap IDs for cell lines for future use
+  left_join(
+    ALMANAC_CCLE_cell_line_matches %>% 
+      select(-PRISM_NAME) %>% 
+      rename(depmap_id = DepMap_ID),
+    by = c("CELLNAME" = "ALMANAC_NAME")
+  ) %>% 
+  #join nearest klaeger doses for each ALMANAC dose
+  left_join(ALMANAC_nearest_klaeger_doses, by = c('CONC1' = 'conc')) %>% 
+	left_join(matched_doses, by = c('CONC1' = 'conc')) %>% 
+	mutate(nearest_klaeger_dose= if_else(
+		is.na(nearest_klaeger_dose), 
+		klaeger_conc, 
+		nearest_klaeger_dose
+	)) %>% 
+	select(-klaeger_conc) %>%
+	rename(nearest_klaeger_dose_1 = nearest_klaeger_dose) %>% 
+	left_join(ALMANAC_nearest_klaeger_doses, by = c('CONC2' = 'conc')) %>% 
+	left_join(matched_doses, by = c('CONC2' = 'conc')) %>% 
+	mutate(nearest_klaeger_dose= if_else(
+		is.na(nearest_klaeger_dose), 
+		klaeger_conc, 
+		nearest_klaeger_dose
+	)) %>% 
+	select(-klaeger_conc) %>%
+	rename(nearest_klaeger_dose_2 = nearest_klaeger_dose) %>% 
+  drop_na() %>% 
+	left_join(All_ALMANAC_synergy_data, 
+						by = c(
+							"klaeger_name_1" = "drug_1",
+							"klaeger_name_2" = "drug_2",
+							"nearest_klaeger_dose_1" = "concentration_M_d1",
+							"nearest_klaeger_dose_2" = "concentration_M_d2",
+							"depmap_id" = "DepMap_ID"
+						)) %>% 
+	drop_na() %>%
+  mutate(viability = TESTVALUE/CONTROLVALUE) %>% 
+  select(-COMBODRUGSEQ, -nearest_klaeger_dose_1, -nearest_klaeger_dose_2, -CONTROLVALUE, -TESTVALUE) %>% 
+  rename(
+    disease = PANEL
+  ) %>% 
+	rename(predicted_viability = via_pred)
+
+rsq = cor(
+	ALMANAC_prediction_comparitive_data %>% 
+		pull(predicted_viability),
+		ALMANAC_prediction_comparitive_data %>% 
+		pull(viability)
+)^2
+
+rmse = rmse(
+	ALMANAC_prediction_comparitive_data %>% 
+		pull(predicted_viability),
+		ALMANAC_prediction_comparitive_data %>% 
+		pull(viability)
+)
+
+ALMANAC_prediction_comparitive_data %>%
+ ggplot(aes(x = predicted_viability, y = viability)) +
+ geom_hex() +
+ scale_fill_viridis_c(guide = guide_colorbar(title = "Number of\nviability values")) +
+ labs(title = 
+  paste0('R\u00B2 = ',
+			 				 round(
+			 				 	rsq,
+			 				 	2),
+			 				 '/ RMSE = ',
+			 				 round(
+			 				 	rmse,
+			 				 	2)
+			 	), 
+  x = "Predicted Viability",
+  y = "Actual Viability from ALMANAC") +
+	geom_abline(intercept = 0, slope = 1, size = 0.3, colour = 'black', linetype = 3) +
+	geom_smooth(colour = "red", method = "lm") +
+	#coord_cartesian(xlim = c(0.2,1), ylim= c(0,1)) +
+	theme(
+		legend.position = "bottom",
+		panel.background = element_rect(fill = "transparent",colour = NA),
+		panel.grid.minor = element_blank(), 
+		panel.grid.major = element_blank(),
+		plot.background = element_rect(fill = "transparent",colour = NA)
+	)
+ggsave(here('figures/misc/combo_predicted_viability_vs_ALMANAC.png'), width = 7, height = 10.5, units = "cm")
+```
+
+

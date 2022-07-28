@@ -1,0 +1,165 @@
+---
+title: "prep all patient data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(conflicted)
+library(geneSynonym)
+library(clipr)
+conflict_prefer("filter", "dplyr")
+conflict_prefer("select", "dplyr")
+```
+
+```{r}
+#read in data
+TCGA_for_ml = read_csv(here('data/Clinical_Data/TCGA/All_TCGA_for_ml.csv'))
+GEO_for_ml = read_csv(here('data/Clinical_Data/GEO/GEO_for_ml.csv'))
+JAVELIN = read_csv(here('data/Clinical_Data/JAVELIN/JAVELIN_data_for_ml.csv'))
+	
+JAVELIN_for_ml = JAVELIN	 %>% 
+	rename(drug_name = treatment,
+				sample_id = patient) %>% 
+	mutate(
+		binary_response = if_else(
+		PFS_P > median(JAVELIN$PFS_P),
+		1,
+		0
+	),
+		measure_of_response = if_else(
+		binary_response == 1, 
+		"above_median_PFS_P",
+		"below_median_PFS_P"
+	),
+		tumor = "Solid Tumour")
+```
+
+```{r}
+#synonyms acquired from https://www.genenames.org/tools/multi-symbol-checker/
+GEO_gene_names = as.data.frame(names(GEO_for_ml)) %>% 
+	rename(gene_name = 1)
+
+write_clip(GEO_gene_names$gene_name)
+
+GEO_HGNC = read_csv(here('data/GEO_HGNCs.csv'), skip = 1) %>% 
+	drop_na()
+
+TCGA_gene_names = as.data.frame(names(TCGA_for_ml)) %>% 
+	rename(gene_name = 1)
+
+write_clip(TCGA_gene_names$gene_name)
+
+TCGA_HGNC = read_csv(here('data/TCGA_HGNCs.csv'), skip = 1) %>% 
+		drop_na()
+
+write_clip(GEO_gene_names$gene_name)
+
+JAVELIN_gene_names = as.data.frame(names(JAVELIN_for_ml)) %>% 
+	rename(gene_name = 1)
+
+write_clip(JAVELIN_gene_names$gene_name)
+
+JAVELIN_HGNC = read_csv(here('data/JAVELIN_HGNCs.csv'), skip = 1) %>% 
+		drop_na()
+```
+
+```{r}
+#matching by alias names
+All_synonyms = GEO_HGNC %>% 
+	select(Input, `HGNC ID`) %>% 
+	rename(GEO_gene_name = Input,
+				 HGNC_id = `HGNC ID`) %>% 
+	left_join(JAVELIN_HGNC %>% 
+							select(Input, `HGNC ID`) %>% 
+							rename(JAVELIN_gene_name = Input,
+										 HGNC_id = `HGNC ID`)) %>% 
+	left_join(TCGA_HGNC %>% 
+							select(Input, `HGNC ID`) %>% 
+							rename(TCGA_gene_name = Input,
+										 HGNC_id = `HGNC ID`))
+
+HGNC_names = bind_rows(GEO_HGNC, TCGA_HGNC, JAVELIN_HGNC) %>% 
+	rename(HGNC_name = `Approved symbol`,
+				 HGNC_id = `HGNC ID`) %>% 
+	select(HGNC_name, HGNC_id) %>% 
+	unique()
+
+All_synonyms_HGNC = All_synonyms %>% 
+	left_join(HGNC_names)
+```
+ 
+```{r}
+GEO_processed = GEO_for_ml %>% 
+	pivot_longer(-c("drug_name",
+									"sample_id",
+									"binary_response",
+									"tumor",
+									"measure_of_response"),
+							 names_to = "GEO_gene_name",
+							 values_to = "value") %>% 
+	left_join(All_synonyms_HGNC %>% 
+							select(-TCGA_gene_name, -JAVELIN_gene_name)) %>% 
+	drop_na() %>% 
+	group_by(drug_name, sample_id, binary_response, tumor, measure_of_response, HGNC_name, HGNC_id) %>% 
+	summarise(mean_value = mean(value))
+
+TCGA_processed = TCGA_for_ml %>% 
+	pivot_longer(-c("drug_name",
+									"sample_id",
+									"binary_response",
+									"tumor",
+									"measure_of_response"),
+							 names_to = "TCGA_gene_name",
+							 values_to = "value") %>% 
+	left_join(All_synonyms_HGNC %>% 
+							select(-GEO_gene_name, -JAVELIN_gene_name)) %>% 
+	drop_na() %>% 
+	group_by(drug_name, sample_id, binary_response, tumor, measure_of_response, HGNC_name, HGNC_id) %>% 
+	summarise(mean_value = mean(value))
+
+JAVELIN_processed = JAVELIN_for_ml %>% 
+	pivot_longer(-c("drug_name",
+									"sample_id",
+									"binary_response",
+									"tumor",
+									"measure_of_response"),
+							 names_to = "JAVELIN_gene_name",
+							 values_to = "value") %>% 
+	left_join(All_synonyms_HGNC %>% 
+							select(-GEO_gene_name, -TCGA_gene_name)) %>% 
+	drop_na() %>% 
+	group_by(drug_name, sample_id, binary_response, tumor, measure_of_response, HGNC_name, HGNC_id) %>% 
+	summarise(mean_value = mean(value))
+```
+
+```{r}
+#combine all data 
+all_clinical_data = bind_rows(
+	GEO_processed %>% 
+		mutate(origin = "GEO"),
+	TCGA_processed %>% 
+		mutate(origin = "TCGA"),
+	JAVELIN_processed %>% 
+		mutate(origin = "JAVELIN")
+) %>% 
+	drop_na()
+
+all_clinical_data_summarised = all_clinical_data %>% 
+	mutate(HGNC_name = paste0("exp_", HGNC_name)) %>% 
+	select(-HGNC_id) %>% 
+	group_by(drug_name, sample_id, origin, binary_response, tumor, measure_of_response, HGNC_name) %>% 
+	summarise(mean_value = mean(mean_value))
+
+all_clinical_data_for_ml = all_clinical_data_summarised %>% 
+	ungroup() %>% 
+	pivot_wider(names_from = HGNC_name,
+							values_from = mean_value,
+							values_fn = mean, 
+							values_fill = 0) %>% 
+	drop_na() %>% 
+	write_csv(here('results/all_clinical_data_for_ml.csv'))
+
+```
+

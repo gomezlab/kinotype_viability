@@ -12,7 +12,7 @@ library(here)
 NCI_dose_response = read_csv(here('data/NCI60/DOSERESP.csv'))
 NCI_klaeger_matches = read_csv(here('results/klaeger_NCI_CAS_matches.csv'))
 PRISM_NCI_cell_lines = read_csv(here('results/matched_ALMANAC_cell_lines.csv'))
-All_preds = read_rds(here('results/model_predictions_1500feat.rds')) %>% 
+All_preds = read_rds(here('results/model_predictions_500feat.rds')) %>% 
 	rename(DepMap_ID = depmap_id) %>% 
 	mutate(concentration_M = log10(concentration_M))
 klaeger = read_rds(here('results/klaeger_full_tidy.rds'))

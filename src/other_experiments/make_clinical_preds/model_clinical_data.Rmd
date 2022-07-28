@@ -1,0 +1,80 @@
+```{r}
+library(tidyverse)
+library(here)
+library(tidymodels)
+library(finetune)
+library(vip)
+library(ggridges)
+library(patchwork)
+```
+
+```{r}
+#read in data 
+this_dataset = read_csv(here('results/clinical_kinotype_data_for_ml.csv'))
+```
+
+
+```{r}
+X = this_dataset %>% 
+	select(starts_with(c("act_", "exp_")))
+
+y = this_dataset %>% 
+	select(binary_response)
+
+set.seed(2222)
+lr_grid = grid_max_entropy(penalty(), mixture(), size = 10)
+```
+
+```{python}
+X = r.X
+y = r.y
+lr_grid = r.lr_grid
+```
+
+```{python}
+import pandas 
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.model_selection import GridSearchCV
+from sklearn.feature_selection import VarianceThreshold
+from sklearn.feature_selection import SelectFromModel
+from sklearn.linear_model import ElasticNet
+
+#preprocessing
+var=VarianceThreshold(threshold=0.0)
+var.fit(X)
+cols = var.get_support(indices=True)
+X_var_selected=X.iloc[:,cols]
+
+scaler = MinMaxScaler()
+
+X_normalized = pandas.DataFrame(scaler.fit_transform(X_var_selected), columns = X_var_selected.columns)
+```
+
+```{python}
+lr_penalties = lr_grid["penalty"].to_list()
+
+clf_lr = ElasticNet(alpha=1, max_iter=9999, random_state = 0, l1_ratio = 1)
+param_dist = {'alpha': lr_penalties,
+							'l1_ratio' : [0, 0.2, 0.4, 0.6, 0.8, 1]
+             }
+
+clf = GridSearchCV(clf_lr,
+                         param_dist,
+                         cv = 3,
+                         scoring = 'r2',
+                         verbose = 3)
+                         
+clf.fit(X_normalized, y)
+results = pd.DataFrame(clf.cv_results_)
+results.sort_values(by='rank_test_score').to_csv('results/clinical_kinotype_lasso_tuning_results.csv')
+
+
+
+# lasso = LogisticRegression(penalty='l1', C=1000, solver='liblinear', max_iter=9000)
+# lasso.fit(X_train, y_train)
+# model = SelectFromModel(lasso, prefit=True, max_features=feature_count)
+# cols = model.get_support(indices=True)
+```
+
+
+

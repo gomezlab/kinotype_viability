@@ -171,8 +171,8 @@ All_TCGA_filtered = All_TCGA_data %>%
 ```
 
 ```{r}
-All_TCGA_filtered = read.csv(here('data/Clinical_Data/TCGA/all_matched_TCGA_data.csv'))
-TCGA_metadata = read_csv(here('data/Clinical_Data/TCGA/patient_RNAseq_Metadata_TCGA.csv'))
+All_TCGA_filtered = read.csv(here('data/Clinical_Data/TCGA/All_matched_TCGA_data.csv'))
+TCGA_metadata = read_csv(here('data/Clinical_Data/TCGA/patient_RNASeq_Metadata_TCGA.csv'))
 
 
 #Conversion to TPM
@@ -232,14 +232,15 @@ All_TCGA_for_ML = All_TCGA_filtered_hgnc_summed %>%
 	mutate(patient_barcode = trimws(patient_barcode)) %>% 
 	left_join(TCGA_metadata, by = 'patient_barcode') %>% 
 	rename('sample_id' = patient_barcode, 'TPM' = sum_TPM) %>% 
-	dplyr::select(-bcr_drug_barcode, -bcr_drug_uuid, -measure_of_response) %>% 
+	dplyr::select(-bcr_drug_barcode, -bcr_drug_uuid) %>% 
 	#summarizing to the patient level (some patients have multiple cancer types)
-	group_by(sample_id, patient_sample_number, hgnc_symbol, drug_name, binary_response) %>% 
+	group_by(sample_id, patient_sample_number, tumor, measure_of_response, hgnc_symbol, drug_name, binary_response) %>% 
 	summarise(mean_TPM = mean(TPM)) %>% 
 	ungroup() %>%
 	rename('TPM' = mean_TPM) %>% 
 	pivot_wider(names_from = hgnc_symbol, values_from = TPM) %>% 
-	dplyr::select(-patient_sample_number)
+	select(-patient_sample_number) %>% 
+	drop_na()
 
 All_TCGA_for_ML_long = All_TCGA_for_ML %>% 
 	pivot_longer(A1BG:ZZZ3, names_to = 'gene', values_to = 'TPM')

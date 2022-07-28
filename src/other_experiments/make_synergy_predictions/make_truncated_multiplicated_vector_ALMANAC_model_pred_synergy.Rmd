@@ -10,13 +10,14 @@ library(tidyverse)
 library(here)
 library(tidymodels)
 library(tictoc)
+library(parallel)
 
 knitr::opts_knit$set(root.dir = here())
 ```
 
 ```{r}
-matched_ALMANAC_drugs = read_csv(here('src/make_synergy_predictions/matched_ALMANAC_drugs.csv'))
-matched_ALMANAC_cell_lines = read_csv(here('src/make_synergy_predictions/matched_ALMANAC_cell_lines.csv'))
+matched_ALMANAC_drugs = read_csv(here('results/matched_ALMANAC_drugs.csv'))
+matched_ALMANAC_cell_lines = read_csv(here('results/matched_ALMANAC_cell_lines.csv'))
 
 tic()
 klaeger_wide_matched = read_rds(here('results/klaeger_full_tidy.rds')) %>%
@@ -27,7 +28,7 @@ klaeger_wide_matched = read_rds(here('results/klaeger_full_tidy.rds')) %>%
 
 CCLE_data = read_rds(here('results/full_CCLE_expression_set_for_ML.rds'))
 
-rand_forest_model = read_rds(here('results/final_model_1500feat.rds'))
+rand_forest_model = read_rds(here('results/final_model_500feat.rds'))
 
 included_predictors = rand_forest_model$fit$fit$fit$forest$independent.variable.names
 
@@ -47,13 +48,19 @@ toc()
 ```
 
 ```{r}
+ALMANAC_klaeger_matches = read_csv(here('results/klaeger_ALMANAC_matches.csv'))
+klaeger_wide_NCI_matched = read_rds(here('results/klaeger_full_tidy.rds')) %>%
+	mutate(act_gene_name = paste0("act_",gene_name)) %>%
+	select(-gene_name) %>% 
+	filter(drug %in% ALMANAC_klaeger_matches$klaeger_name) %>% 
+	pivot_wider(names_from = act_gene_name, values_from = relative_intensity)
 
 calc_klaeger_combo_truncated <- function(input_drug_1, input_drug_2, input_conc_1, input_conc_2) {
 	
 	klaeger_combo = bind_rows(
-		klaeger_wide_matched %>% 
+		klaeger_wide_NCI_matched %>% 
 			filter(drug == input_drug_1, concentration_M == input_conc_1),
-		klaeger_wide_matched %>% 
+		klaeger_wide_NCI_matched %>% 
 			filter(drug == input_drug_2, concentration_M == input_conc_2)
 	) %>% 
 		pivot_longer(starts_with('act'), names_to = 'kinase', values_to = 'value') %>% 
@@ -76,20 +83,19 @@ calc_klaeger_combo_truncated <- function(input_drug_1, input_drug_2, input_conc_
 	return(klaeger_combo)
 }
 
-drug_list = sort(unique(klaeger_wide_matched$drug))
+drug_list = sort(unique(klaeger_wide_NCI_matched$drug))
 
 possible_klaeger_combos = crossing(
 	drug_1 = drug_list,
 	drug_2 = drug_list,
-	concentration_M_d1 = unique(klaeger_wide_matched$concentration_M),
-	concentration_M_d2 = unique(klaeger_wide_matched$concentration_M)
+	concentration_M_d1 = unique(klaeger_wide_NCI_matched$concentration_M),
+	concentration_M_d2 = unique(klaeger_wide_NCI_matched$concentration_M)
 ) %>% filter(drug_1 > drug_2)
 
 klaeger_combo_sets = possible_klaeger_combos %>% 
 	mutate(klaeger_combo = pmap(list(drug_1,drug_2,concentration_M_d1,concentration_M_d2),calc_klaeger_combo_truncated)) %>%
 	unnest(klaeger_combo) %>%
 	write_rds(here('results/synergy_pred/ALMANAC_klaeger_synergy_combos_truncated.rds'))
-
 ```
 
 ```{r}
