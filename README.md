@@ -16,7 +16,7 @@ Nearly all of the code in this respository is written in R, almost all using tid
 
 Otherwise, everything in this respository was written using Rstudio, but I don't think Rstudio is strickly necessary to run or modify the code. Typically, when I'm working on this project the first thing I do is open the R project file present in the top level directory. 
 
-The raw data used for this work is too large to fit into this repository, but I've made a copy of the data organized into the directory structure the rest of the code expects on zenodo. A majority of the data sets were downloaded from the [depmap data portal](https://depmap.org/portal/download/) and compressed, with the remainder coming from journal supplemental data sections. These files should end up in a top level "/data" directory.
+The raw data used for this work is too large to fit into this repository, but I've made a copy of the data organized into the directory structure the rest of the code expects on zenodo. A majority of the data sets were downloaded from the [depmap data portal](https://depmap.org/portal/download/) and publications. These files should end up in a top level "/data" directory.
 
 As for the overall organization of the code, there are four primary divisions:
 
