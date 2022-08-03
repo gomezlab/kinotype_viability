@@ -192,6 +192,36 @@ write_csv(all_results, here('results/ALMANAC_klaeger_lasso_xgboost_results.csv')
 ```
 
 ```{r}
+all_results = read_csv(here('results/ALMANAC_klaeger_lasso_xgboost_results.csv'))
+all_results %>%
+ ggplot(aes(x = predicted_viability, y = viability)) +
+ geom_hex() +
+ scale_fill_viridis_c(guide = guide_colorbar(title = "Number of\nviability values")) +
+ labs(title = 
+  paste0('R\u00B2 = ',
+			 				 round(
+			 				 	rsq,
+			 				 	2),
+			 				 '/ RMSE = ',
+			 				 round(
+			 				 	rmse,
+			 				 	2)
+			 	), 
+  x = "Predicted Viability",
+  y = "Actual Viability from ALMANAC") +
+	geom_abline(intercept = 0, slope = 1, size = 0.3, colour = 'black', linetype = 3) +
+	geom_smooth(colour = "red", method = "lm") +
+	#coord_cartesian(xlim = c(0.2,1), ylim= c(0,1)) +
+	theme(
+		legend.position = "bottom",
+		panel.background = element_rect(fill = "transparent",colour = NA),
+		panel.grid.minor = element_blank(), 
+		panel.grid.major = element_blank(),
+		plot.background = element_rect(fill = "transparent",colour = NA)
+	)
+```
+
+```{r}
 #build xgboost models (grid search based on increasing feature numbers selected by lasso)
 ALMANAC_klaeger_CCLE_data = read_csv(here('results/ALMANAC_klaeger_data_for_ml.csv'))
 lasso_tuning_results = read_csv(here('results/ALMANAC_klaeger_lasso_tuning_results.csv')) %>% 
