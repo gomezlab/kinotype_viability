@@ -17,17 +17,29 @@ fold_ids = read_rds(here('results/single_model_expression_regression/CV_split_ro
 # 	}
 # }
 
-for (feature_num in c(100,200,300,400,500,1000,1500,2000)) {
-	for (fold_num in sort(unique(fold_ids))) {
-		
-		job_name = sprintf('NN_%d_%04d',feature_num,fold_num)
-		
-		command = sprintf('sbatch --job-name=%s --mem=32G -c 8 --time=1-00:00:00 --wrap "./build_NN_models_no_tune.R --feature_num %d --CV_fold_ID %d"', job_name, feature_num, fold_num)
-		
-		# print(command)
-		system(command)
-	}
+
+for (fold_num in unique(fold_ids)) {
+	
+	job_name = sprintf('RF_500_%04d',fold_num)
+	
+	command = sprintf('sbatch --job-name=%s --mem=64G -c 16 --time=1-00:00:00 --wrap "./build_random_forest_models_more_tuning.R --CV_fold_ID %d"', job_name, feature_num, fold_num)
+	
+	# print(command)
+	system(command)
 }
+
+
+# for (feature_num in c(100,200,300,400,500,1000,1500,2000)) {
+# 	for (fold_num in sort(unique(fold_ids))) {
+# 		
+# 		job_name = sprintf('NN_%d_%04d',feature_num,fold_num)
+# 		
+# 		command = sprintf('sbatch --job-name=%s --mem=32G -c 8 --time=1-00:00:00 --wrap "./build_NN_models_no_tune.R --feature_num %d --CV_fold_ID %d"', job_name, feature_num, fold_num)
+# 		
+# 		# print(command)
+# 		system(command)
+# 	}
+# }
 
 # for (feature_num in c(500,1000,1500,2000)) {
 # 	for (fold_num in unique(fold_ids)) {

@@ -6,30 +6,36 @@ library(tidymodels)
 library(tictoc)
 library(doParallel)
 library(argparse)
-library(tabnet)
 
 tic()
 
 parser <- ArgumentParser(description='Process input paramters')
-parser$add_argument('--feature_num', default = 100, type="integer")
+parser$add_argument('--feature_num', default = 500, type="integer")
 parser$add_argument('--CV_fold_ID', default = 1, type="integer")
+parser$add_argument('--trees', default = 500, type="integer")
+
+hyper_param_grid = crossing(
+	mtry = floor(sqrt(args$feature_num)*seq(0.5,2,by=0.5)), 
+	min_n = c(3,5,10))
 
 args = parser$parse_args()
+
 print(sprintf('Fold: %02d',args$CV_fold_ID))
 
 dir.create(here('results/single_model_expression_regression/', 
-								sprintf('tabnet/%dfeat_notune/',args$feature_num)), 
+								sprintf('rand_forest_more_tune/%dfeat_%dtrees/',args$feature_num,args$trees)), 
 					 showWarnings = F, recursive = T)
 
 full_output_file = here('results/single_model_expression_regression/', 
-												sprintf('tabnet/%dfeat_notune/',args$feature_num),
+												sprintf('rand_forest_more_tune/%dfeat_%dtrees/',args$feature_num,args$trees),
 												sprintf('fold%04d_test.rds',args$CV_fold_ID))
 
 dir.create(here('results/single_model_expression_regression/', 
-								sprintf('tabnet/%dfeat_notune_pred/',args$feature_num)), showWarnings = F)
+								sprintf('rand_forest_more_tune/%dfeat_%dtrees_pred/',args$feature_num,args$trees)), 
+					 showWarnings = F)
 
 pred_output_file = here('results/single_model_expression_regression/', 
-												sprintf('tabnet/%dfeat_notune_pred/',args$feature_num),
+												sprintf('rand_forest_more_tune/%dfeat_%dtrees_pred/',args$feature_num,args$trees),
 												sprintf('fold%04d_test.rds',args$CV_fold_ID))
 
 feature_cor = read_rds(here('results/single_model_expression_regression/CV_feature_cors/',
@@ -88,18 +94,21 @@ PRISM_klaeger_recipe = recipe(target_viability ~ ., cross_validation_set$splits[
 							-starts_with("target_"), new_role = "id variable") %>%
 	prep()
 
-tabnet_spec <- tabnet() %>% 
-	set_engine("torch") %>%
+rand_forest_spec <- rand_forest(trees = args$trees,
+																mtry = tune(),
+																min_n = tune()) %>% 
+	set_engine("ranger", num.threads = 16) %>%
 	set_mode("regression")
 
-tabnet_wf <- workflow() %>%
-	add_model(tabnet_spec) %>%
+rand_forest_wf <- workflow() %>%
+	add_model(rand_forest_spec) %>%
 	add_recipe(PRISM_klaeger_recipe)
 
 model_results <- tune_grid(
-	tabnet_wf,
+	rand_forest_wf,
 	resamples = cross_validation_set,
-	control = control_grid(save_pred = TRUE)
+	control = control_grid(save_pred = TRUE),
+	grid = hyper_param_grid
 ) %>% write_rds(full_output_file, compress = 'gz')
 
 write_rds(model_results$.predictions[[1]], pred_output_file, compress = 'gz')
