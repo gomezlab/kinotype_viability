@@ -14,11 +14,11 @@ parser$add_argument('--feature_num', default = 500, type="integer")
 parser$add_argument('--CV_fold_ID', default = 1, type="integer")
 parser$add_argument('--trees', default = 500, type="integer")
 
+args = parser$parse_args()
+
 hyper_param_grid = crossing(
 	mtry = floor(sqrt(args$feature_num)*seq(0.5,2,by=0.5)), 
 	min_n = c(3,5,10))
-
-args = parser$parse_args()
 
 print(sprintf('Fold: %02d',args$CV_fold_ID))
 
