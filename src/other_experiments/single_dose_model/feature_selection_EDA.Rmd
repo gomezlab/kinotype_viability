@@ -1,0 +1,135 @@
+---
+title: "Make Inhibition/Expression Feature Selection Figures"
+author: "Matthew Berginski"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(tidymodels)
+library(tictoc)
+library(doParallel)
+library(patchwork)
+
+knitr::opts_knit$set(root.dir = here())
+```
+
+# Load Data
+
+```{r}
+klaeger_wide = read_rds(here('results/klaeger_full_tidy.rds')) %>%
+	mutate(act_gene_name = paste0("act_",gene_name)) %>%
+	select(-gene_name) %>%
+	pivot_wider(names_from = act_gene_name, values_from = relative_intensity)
+
+PRISM_klaeger_imputed = read_rds(here('results/PRISM_klaeger_imputed_tidy.rds'))
+
+CCLE_data = read_rds(here('results/single_model/full_CCLE_expression_set_for_ML.rds'))
+
+PRISM_klaeger_imputed = PRISM_klaeger_imputed %>%
+	filter(depmap_id %in% CCLE_data$DepMap_ID) %>%
+	ungroup()
+```
+
+# Assess Full Data Correlations
+
+```{r}
+all_cor = read_rds(here('results/single_dose_model/full_data_cor.rds')) %>%
+	mutate(feature_type = as.factor(ifelse(feature_type == "Activation", "Inhibition", feature_type))) %>%
+	mutate(feature_type = fct_relevel(feature_type,"Inhibition",after = 0))
+
+per_group_rank = all_cor %>%
+	group_by(feature_type) %>%
+	nest() %>%
+	mutate(group_rank = map(data, ~ .x %>% 
+														mutate(sub_percent_rank = percent_rank(abs_cor*-1),
+																	 sub_rank = 1:n()))) %>%
+	unnest(cols = c(group_rank)) %>%
+	ungroup() %>%
+	select(feature,sub_rank,sub_percent_rank) %>%
+	identity()
+
+all_cor = all_cor %>%
+	left_join(per_group_rank)
+```
+
+
+## Overall Feature Correlation Plotting
+
+### Full Correlation Histograms
+```{r}
+ggplot(all_cor, aes(x=abs_cor)) +
+	geom_histogram() +
+	BerginskiRMisc::theme_berginski() +
+	labs(x="Absolute Value Correlation", y="Number of Features") +
+	xlim(c(0,NA)) +
+	facet_wrap(~feature_type,scales = "free_y")
+
+ggsave(here('figures/single_dose_model/feature_cor_histograms.png'),width=4,height=2)
+BerginskiRMisc::trimImage(here('figures/single_dose_model/feature_cor_histograms.png'))
+
+ggplot(all_cor, aes(x=abs_cor, y=after_stat(density), color=feature_type)) +
+	geom_freqpoly() +
+	BerginskiRMisc::theme_berginski() +
+	labs(x="Absolute Value Correlation", y="Density of Features", color="")
+
+ggsave(here('figures/single_dose_model/feature_cor_freqpoly.png'),width=3,height=3)
+```
+
+### By Feature Type - Percentile Rank
+```{r}
+per_rank = ggplot(all_cor, aes(x=rank,y=sub_percent_rank,color=feature_type)) +
+	geom_line(size=1.5) +
+	labs(x="Overall Correlation Rank",y="Percentile Rank within Feature", color='') +
+	BerginskiRMisc::theme_berginski()
+ggsave(here('figures/single_dose_model/group_perc_rank.png'),width=6*0.75,height=5*0.75)
+BerginskiRMisc::trimImage(here('figures/single_dose_model/group_perc_rank.png'))
+
+per_rank_zoom = ggplot(all_cor %>% filter(rank <= 2000), aes(x=rank,y=sub_percent_rank,color=feature_type)) +
+	geom_line(size=1.5) +
+	labs(x="Overall Correlation Rank",y="Percentile Rank within Feature", color='') +
+	scale_x_continuous(breaks=seq(0,2000,by=500)) +
+	theme(legend.position = "none", aspect.ratio = 1:1) +
+	BerginskiRMisc::theme_berginski()
+ggsave(here('figures/single_dose_model/group_perc_rank_zoom.png'),width=6*0.75,height=5*0.75)
+BerginskiRMisc::trimImage(here('figures/single_dose_model/group_perc_rank_zoom.png'))
+```
+
+### By Feature Type - Overall Rank
+```{r}
+rank_full = ggplot(all_cor, aes(x=rank,y=sub_rank,color=feature_type)) +
+	geom_line(size=1.5) +
+	labs(x="Overall Correlation Rank",y="Number of Features", color='') +
+	theme(legend.position = "none") +
+	BerginskiRMisc::theme_berginski()
+ggsave(here('figures/single_dose_model/group_rank_count.png'),width=6*0.75,height=5*0.75)
+BerginskiRMisc::trimImage(here('figures/single_dose_model/group_rank_count.png'))
+
+ggsave(here('figures/single_dose_model/selection_order_full.png'), 
+			 plot = rank_full + 
+			 	per_rank + 
+			 	plot_layout(guides = "collect") & 
+			 	theme(legend.position = 'bottom', legend.margin=margin(0,0,0,0), legend.box.margin=margin(-10,-10,-10,-10)),
+			 width=7,height=3.2)
+BerginskiRMisc::trimImage(here('figures/single_dose_model/selection_order_full.png'))
+
+
+rank_zoom = ggplot(all_cor %>% filter(rank <= 2000), aes(x=rank,y=sub_rank,color=feature_type)) +
+	geom_line(size=1.5) +
+	labs(x="Overall Correlation Rank",y="Number of Features", color='') +
+	scale_x_continuous(breaks=seq(0,2000,by=500)) +
+	theme(legend.position = "none", aspect.ratio = 1:1) +
+	BerginskiRMisc::theme_berginski()
+ggsave(here('figures/single_dose_model/group_rank_count_zoom.png'),width=6*0.75,height=5*0.75)
+BerginskiRMisc::trimImage(here('figures/single_dose_model/group_rank_count_zoom.png'))
+
+ggsave(here('figures/single_dose_model/selection_order.png'), 
+			 plot = rank_zoom + 
+			 	per_rank_zoom + 
+			 	plot_layout(guides = "collect") & 
+			 	theme(legend.position = 'bottom', legend.margin=margin(0,0,0,0), legend.box.margin=margin(-10,-10,-10,-10)),
+			 width=4*1.5,height=2*1.5)
+BerginskiRMisc::trimImage(here('figures/single_dose_model/selection_order.png'))
+```
