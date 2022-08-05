@@ -1,0 +1,115 @@
+---
+title: "Assess Classification Models"
+author: "Matthew Berginski"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(tidymodels)
+library(ROCR)
+library(patchwork)
+library(tictoc)
+library(broom)
+library(gghighlight)
+library(Metrics)
+
+knitr::opts_knit$set(root.dir = here())
+```
+
+# Rand Forest Model Assessment
+
+```{r}
+tic()
+
+model_results = data.frame()
+all_pred = data.frame()
+model_files = Sys.glob(here('results/single_model_expression_regression/rand_forest/500feat_notune_pred/*'))
+
+for (this_file in model_files) {
+	these_cv_results = read_rds(this_file) %>%
+		mutate(fold_file = basename(this_file))
+	
+	all_pred = bind_rows(all_pred,
+											 these_cv_results)
+	
+	model_results = bind_rows(
+		model_results,
+		data.frame(fold_file = basename(this_file),
+							 model_type = 'rand_forest',
+							 rmse = sqrt(mean((these_cv_results$.pred - these_cv_results$target_viability)^2)),
+							 r2 = glance(summary(lm(these_cv_results$.pred ~ these_cv_results$target_viability)))$r.squared))
+}
+
+all_pred = all_pred %>%
+	arrange(.row)
+toc()
+```
+
+```{r}
+klaeger_wide = read_rds(here('results/klaeger_full_tidy.rds')) %>%
+	mutate(act_gene_name = paste0("act_",gene_name)) %>%
+	select(-gene_name) %>%
+	pivot_wider(names_from = act_gene_name, values_from = relative_intensity)
+
+PRISM_klaeger_imputed = read_rds(here('results/PRISM_klaeger_imputed_tidy.rds'))
+
+CCLE_data = read_rds(here('results/single_model/full_CCLE_expression_set_for_ML.rds'))
+
+PRISM_klaeger_imputed = PRISM_klaeger_imputed %>%
+	filter(depmap_id %in% CCLE_data$DepMap_ID) %>%
+	select(-klaeger_conc,-imputed_viability) %>%
+	ungroup()
+
+all_pred$depmap_id = PRISM_klaeger_imputed$depmap_id
+all_pred$drug = PRISM_klaeger_imputed$drug
+
+drug_count = PRISM_klaeger_imputed %>% 
+	count(drug)
+```
+
+```{r}
+model_drug_summary = all_pred %>% 
+	group_by(drug) %>% 
+		summarise(rmse = rmse(target_viability,.pred),
+							r2 = glance(summary(lm(.pred ~ target_viability)))$r.squared) %>%
+	left_join(drug_count) %>%
+	mutate(type = "Compound")
+
+model_line_summary = all_pred %>% 
+	group_by(depmap_id) %>% 
+		summarise(rmse = rmse(target_viability,.pred),
+							r2 = glance(summary(lm(.pred ~ target_viability)))$r.squared) %>%
+	mutate(type = "Cell Line")
+```
+
+```{r}
+ggplot(model_drug_summary, aes(x=r2, y=rmse)) + 
+	geom_point() +
+	geom_vline(aes(xintercept = 0.79)) +
+	geom_hline(aes(yintercept = 0.154))
+```
+
+```{r}
+combined_set = bind_rows(model_drug_summary %>% select(type,r2,rmse),
+									 model_line_summary %>% select(type,r2,rmse))
+
+all_r2_plot = ggplot(combined_set, aes(x=r2, color=type, fill=type)) + 
+	geom_density(alpha=0.50) +
+	labs(x = "R\u00B2 Value",y="Density of Data Points", fill="", color="") +
+	BerginskiRMisc::theme_berginski()
+
+all_rmse_plot = ggplot(combined_set, aes(x=rmse, color=type, fill=type)) + 
+	geom_density(alpha=0.50) +
+	labs(x = "RMSE Value",y="Density of Data Points", fill="", color="") +
+	BerginskiRMisc::theme_berginski()
+
+ggsave(here('figures/single_model_expression/cell_line_drug_split.png'),
+			 all_r2_plot + all_rmse_plot +
+			 	plot_layout(guides = "collect") & 
+			 	theme(legend.position = 'bottom', legend.margin=margin(0,0,0,0), legend.box.margin=margin(-10,-10,-10,-10)),
+			 width=6,height=3)
+BerginskiRMisc::trimImage(here('figures/single_model_expression/cell_line_drug_split.png'))
+```
