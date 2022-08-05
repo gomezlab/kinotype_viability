@@ -17,15 +17,15 @@ knitr::opts_knit$set(root.dir = here())
 
 ```{r}
 compound_order = c("Dinaciclib","Lestaurtinib","TAK-733","Trametinib","Masitinib",
-								"Palbociclib", "AT-9283", "UCN-01","Gilteritinib","Cobimetinib","KW-2449",
-								"K-252a","MK-2206")
+									 "Palbociclib", "AT-9283", "UCN-01","Gilteritinib","Cobimetinib","KW-2449",
+									 "K-252a","MK-2206")
 
 PRISM_sample_info = read_csv(here('data/CCLE_data/sample_info.csv')) %>%
 	filter(cell_line_name == "HCC1806") 
 
 testing_results = read_rds(here('results/validation_results/HCC_PRISM_replication_screen.rds')) %>% 
 	filter(! qc_fail) %>%
-  mutate(cell_line = 'HCC1806') %>% 
+	mutate(cell_line = 'HCC1806') %>% 
 	left_join(PRISM_sample_info %>% select(cell_line_name,DepMap_ID), by=c('cell_line'='cell_line_name')) %>%
 	rename(drug = compound, actual_viability = viability, depmap_id = DepMap_ID) %>%
 	mutate(drug = as.character(drug)) %>% 
@@ -101,6 +101,47 @@ ggplot(testing_results_summary_plot, aes(x=log10(concentration_M),y=viability, c
 				legend.box.margin=margin(-10,-10,-10,-10))
 ggsave(here('figures/validation_screen/PRISM_replication.png'),height=1.5,width=10)
 BerginskiRMisc::trimImage(here('figures/validation_screen/PRISM_replication.png'))
+```
+
+```{r}
+library(patchwork)
+dir.create(here('figures/validation_screen/presentation_format'), showWarnings = F)
+
+top_set = ggplot(testing_results_summary_plot %>% 
+								 	filter(drug %in% levels(testing_results_summary_plot$drug)[1:6]) %>%
+								 	mutate(drug = droplevels(drug)), 
+								 aes(x=log10(concentration_M),y=viability, color=data_type)) +
+	geom_line(lwd=1.25,alpha=0.75) +
+	geom_point(
+		data = testing_results %>% filter(drug %in% levels(testing_results_summary_plot$drug)[1:6]), 
+		aes(x=log10(concentration_M),y=actual_viability, color="Assay Results"), alpha=0.25) +
+	labs(x="Log10 Compound Concentration (M)",y="Cell Viability",color='') +
+	BerginskiRMisc::theme_berginski() +
+	scale_color_manual(values = c("PRISM" = "#1b9e77", "Assay Results" = "#d95f02")) +
+	facet_grid(rows = vars(cell_line), cols = vars(drug)) +
+	theme(legend.position = 'bottom',
+				legend.margin=margin(0,0,0,0), 
+				legend.box.margin=margin(-10,-10,-10,-10))
+
+bottom_set = ggplot(testing_results_summary_plot %>% 
+											filter(drug %in% levels(testing_results_summary_plot$drug)[7:11]) %>%
+											mutate(drug = droplevels(drug)), 
+										aes(x=log10(concentration_M),y=viability, color=data_type)) +
+	geom_line(lwd=1.25,alpha=0.75) +
+	geom_point(
+		data = testing_results %>% filter(drug %in% levels(testing_results_summary_plot$drug)[7:11]), 
+		aes(x=log10(concentration_M),y=actual_viability, color="Assay Results"), alpha=0.25) +
+	labs(x="Log10 Compound Concentration (M)",y="Cell Viability",color='') +
+	BerginskiRMisc::theme_berginski() +
+	scale_color_manual(values = c("PRISM" = "#1b9e77", "Assay Results" = "#d95f02")) +
+	facet_grid(rows = vars(cell_line), cols = vars(drug)) +
+	theme(legend.position = 'bottom',
+				legend.margin=margin(0,0,0,0), 
+				legend.box.margin=margin(-10,-10,-10,-10))
+
+ggsave(here('figures/validation_screen/presentation_format/PRISM_replication.png'),
+			 top_set / bottom_set, height=3.25,width=5)
+BerginskiRMisc::trimImage(here('figures/validation_screen/presentation_format/PRISM_replication.png'))
 ```
 
 ```{r}
