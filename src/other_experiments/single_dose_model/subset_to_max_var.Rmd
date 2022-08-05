@@ -1,0 +1,47 @@
+---
+title: "Subset PRISM to Max Var Single Dose"
+author: "Matthew Berginski"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+
+knitr::opts_knit$set(root.dir = here())
+```
+
+```{r}
+klaeger_wide = read_rds(here('results/klaeger_full_tidy.rds')) %>%
+	mutate(act_gene_name = paste0("act_",gene_name)) %>%
+	select(-gene_name) %>%
+	pivot_wider(names_from = act_gene_name, values_from = relative_intensity)
+
+PRISM_klaeger_imputed = read_rds(here('results/PRISM_klaeger_imputed_tidy.rds'))
+
+CCLE_data = read_rds(here('results/single_model/full_CCLE_expression_set_for_ML.rds'))
+
+PRISM_klaeger_imputed = PRISM_klaeger_imputed %>%
+	filter(depmap_id %in% CCLE_data$DepMap_ID) %>%
+	ungroup()
+```
+
+```{r}
+dir.create(here('results/single_dose_model'), showWarnings = F)
+
+max_viability_variance = PRISM_klaeger_imputed %>% 
+	group_by(drug, klaeger_conc) %>%
+	summarise(stdev = sd(imputed_viability)) %>%
+	group_by(drug) %>%
+	summarise(drug_max_stdev = max(stdev))
+	
+max_via_conc = PRISM_klaeger_imputed %>% 
+	group_by(drug, klaeger_conc) %>%
+	summarise(stdev = sd(imputed_viability)) %>%
+	left_join(max_viability_variance) %>%
+	filter(stdev == drug_max_stdev) %>%
+	mutate(drug_conc = paste(drug, klaeger_conc, sep="-")) %>%
+	ungroup() %>%
+	write_rds(here('results/single_dose_model/max_single_dose_stdev.rds'))
+```
