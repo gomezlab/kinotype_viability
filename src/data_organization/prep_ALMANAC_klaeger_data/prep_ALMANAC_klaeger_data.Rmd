@@ -148,7 +148,25 @@ ALMANAC_klaeger_data =  ALMANAC_cell_line_matched_unique %>%
 
 ```{r}
 
-write_csv(ALMANAC_klaeger_data, here('results/ALMANAC_klaeger_data_for_ml.csv'))
+#join in CCLE data 
+
+ALMANAC_klaeger_CCLE_data = ALMANAC_klaeger_data %>% 
+	left_join(CCLE_data, by = 'DepMap_ID') %>% 
+	drop_na()
+
+```
+
+
+```{r}
+set.seed(2222)
+#excluding viability > 1
+this_dataset = ALMANAC_klaeger_CCLE_data %>% 
+	filter(viability <=1)
+```
+
+```{r}
+
+write_csv(this_dataset, here('results/ALMANAC_klaeger_data_for_ml.csv'))
 
 ```
 

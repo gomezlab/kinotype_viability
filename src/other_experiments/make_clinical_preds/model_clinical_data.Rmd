@@ -1,80 +1,191 @@
-```{r}
+---
+title: "ALMANAC_modelling"
+output: html_document
+---
+
+```{r setup, include=FALSE}
 library(tidyverse)
 library(here)
 library(tidymodels)
-library(finetune)
-library(vip)
-library(ggridges)
+library(tictoc)
+library(doParallel)
 library(patchwork)
+library(ROCR)
+library(reticulate)
+library(vip)
+library(recipeselectors)
+library(conflicted)
+library(Metrics)
+
+conflict_prefer("slice", "dplyr")
+conflict_prefer("filter", "dplyr")
+conflict_prefer("rmse", "Metrics")
+knitr::opts_knit$set(root.dir = here())
 ```
 
 ```{r}
 #read in data 
-this_dataset = read_csv(here('results/clinical_kinotype_data_for_ml.csv'))
+this_dataset = read_csv(here('results/clinical_kinotype_data_for_ml.csv')) %>% 
+	mutate(binary_response = as.factor(binary_response))
 ```
 
 
 ```{r}
-X = this_dataset %>% 
-	select(starts_with(c("act_", "exp_")))
+#tuning lasso feature selection within xgboost
 
-y = this_dataset %>% 
-	select(binary_response)
+xgb_grid = read_rds(here('results/hyperparameter_grids/xgb_grid.rds'))
 
 set.seed(2222)
-lr_grid = grid_max_entropy(penalty(), mixture(), size = 10)
+folds = vfold_cv(this_dataset, v = 5, strata = binary_response)
+
+tic()	
+
+this_recipe = recipe(this_dataset) %>%
+  update_role(-starts_with("act_"),
+              -starts_with("exp_"),
+              -starts_with("binary_response"),
+              new_role = "id variable") %>%
+	update_role(starts_with(c("act_", "exp_")), new_role = "predictor") %>% 
+	update_role(binary_response, new_role = "outcome") %>%
+	step_normalize(all_predictors()) %>%  
+  step_zv(all_predictors()) %>% 
+	step_select_linear(all_predictors(), outcome = "binary_response", engine = "glmnet", penalty = tune(), mixture = tune(), top_p = tune())
+
+xgb_spec <- boost_tree(
+  trees = tune(), 
+  tree_depth = tune()
+) %>% 
+  set_engine("xgboost", tree_method = "gpu_hist") %>% 
+  set_mode("classification")
+
+this_wflow <-
+  workflow() %>%
+  add_model(xgb_spec) %>%
+  add_recipe(this_recipe)
+
+race_ctrl = control_grid(
+  save_pred = TRUE, 
+  parallel_over = "everything",
+  verbose = TRUE
+)
+
+set.seed(2222)
+recipe_grid = grid_max_entropy(
+	extract_parameter_set_dials(this_recipe) %>% 
+		update(top_p = top_p(c(5,2000))), 
+	size = 10
+)
+
+full_grid = merge(xgb_grid, recipe_grid)
+
+results <- tune_grid(
+  this_wflow,
+  resamples = folds,
+  grid = full_grid,
+  control = race_ctrl
+) %>% 
+  collect_metrics()
+  
+toc()
+
+
+write_csv(results, here('results/clinical_trial_lasso_xgboost_all_tuning_results.csv'))
 ```
 
-```{python}
-X = r.X
-y = r.y
-lr_grid = r.lr_grid
+```{r}
+# fit best model for figure
+results = read_csv(here('results/clinical_trial_lasso_xgboost_all_tuning_results.csv'))
+
+best_model = results %>% 
+	filter(.metric == "rsq") %>% 
+	arrange(desc(mean)) %>% 
+	slice(1)
+
+clinical_trial_CCLE_data = read_csv(here('results/clinical_kinotype_data_for_ml.csv'))
+
+set.seed(2222)
+folds = vfold_cv(clinical_trial_CCLE_data, v = 5)
+
+tic()	
+
+this_recipe = recipe(clinical_trial_CCLE_data) %>%
+  update_role(-starts_with("act_"),
+              -starts_with("exp_"),
+              -starts_with("viability"),
+              new_role = "id variable") %>%
+	update_role(starts_with(c("act_", "exp_")), new_role = "predictor") %>% 
+	update_role(viability, new_role = "outcome") %>%
+	step_normalize(all_predictors()) %>%  
+  step_zv(all_predictors()) %>% 
+	step_select_linear(all_predictors(), outcome = "viability", engine = "glmnet", penalty = best_model$penalty, mixture = best_model$mixture, top_p = best_model$top_p)
+
+xgb_spec <- boost_tree(
+  trees = best_model$trees, 
+  tree_depth = best_model$tree_depth
+) %>% 
+  set_engine("xgboost", tree_method = "gpu_hist") %>% 
+  set_mode("regression")
+
+this_wflow <-
+  workflow() %>%
+  add_model(xgb_spec) %>%
+  add_recipe(this_recipe)
+
+race_ctrl = control_resamples(
+  save_pred = TRUE, 
+  parallel_over = "everything",
+  verbose = TRUE
+)
+
+final_results <- fit_resamples(
+  this_wflow,
+  resamples = folds,
+  control = race_ctrl
+) 
+  
+toc()
 ```
 
-```{python}
-import pandas 
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.model_selection import GridSearchCV
-from sklearn.feature_selection import VarianceThreshold
-from sklearn.feature_selection import SelectFromModel
-from sklearn.linear_model import ElasticNet
+```{r}
+final_predictions = collect_predictions(final_results) %>% 
+	rename(predicted_viability = .pred)
 
-#preprocessing
-var=VarianceThreshold(threshold=0.0)
-var.fit(X)
-cols = var.get_support(indices=True)
-X_var_selected=X.iloc[:,cols]
+rsq = cor(
+	final_predictions %>% 
+		pull(predicted_viability),
+		final_predictions %>% 
+		pull(viability)
+)^2
 
-scaler = MinMaxScaler()
+rmse = rmse(final_predictions %>% 
+		pull(predicted_viability),
+		final_predictions %>% 
+		pull(viability))
 
-X_normalized = pandas.DataFrame(scaler.fit_transform(X_var_selected), columns = X_var_selected.columns)
+final_predictions %>%
+	ggplot(aes(y = predicted_viability, x = viability)) +
+	geom_hex() +
+	scale_fill_viridis_c() +
+	labs(title = 
+			 	paste0('R\u00B2 = ',
+			 				 round(
+			 				 	rsq,
+			 				 	2),
+			 				 '/ RMSE = ',
+			 				 round(
+			 				 	rmse,
+			 				 	2)
+			 	), 
+			 x = "Predicted Viability",
+			 y = "Actual Viability in ALMANAC") +
+	geom_abline(intercept = 0, slope = 1, size = 0.3, colour = 'black', linetype = 3) +
+	geom_smooth(colour = "red") +
+	#coord_cartesian(xlim = c(0.2,1), ylim= c(0,1)) +
+	theme(
+		panel.background = element_rect(fill = "transparent",colour = NA),
+    panel.grid.minor = element_blank(), 
+    panel.grid.major = element_blank(),
+    plot.background = element_rect(fill = "transparent",colour = NA)
+      )
+ggsave(here('figures/misc/clinical_trial_best_model_CV.png'))
 ```
-
-```{python}
-lr_penalties = lr_grid["penalty"].to_list()
-
-clf_lr = ElasticNet(alpha=1, max_iter=9999, random_state = 0, l1_ratio = 1)
-param_dist = {'alpha': lr_penalties,
-							'l1_ratio' : [0, 0.2, 0.4, 0.6, 0.8, 1]
-             }
-
-clf = GridSearchCV(clf_lr,
-                         param_dist,
-                         cv = 3,
-                         scoring = 'r2',
-                         verbose = 3)
-                         
-clf.fit(X_normalized, y)
-results = pd.DataFrame(clf.cv_results_)
-results.sort_values(by='rank_test_score').to_csv('results/clinical_kinotype_lasso_tuning_results.csv')
-
-
-
-# lasso = LogisticRegression(penalty='l1', C=1000, solver='liblinear', max_iter=9000)
-# lasso.fit(X_train, y_train)
-# model = SelectFromModel(lasso, prefit=True, max_features=feature_count)
-# cols = model.get_support(indices=True)
-```
-
-
-

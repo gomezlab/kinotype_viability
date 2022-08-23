@@ -14,9 +14,11 @@ library(reticulate)
 library(vip)
 library(recipeselectors)
 library(conflicted)
+library(Metrics)
 
 conflict_prefer("slice", "dplyr")
 conflict_prefer("filter", "dplyr")
+conflict_prefer("rmse", "Metrics")
 knitr::opts_knit$set(root.dir = here())
 ```
 
@@ -31,120 +33,18 @@ set.seed(2222)
 lr_grid = grid_max_entropy(penalty(), mixture(), size = 20)
 ```
 
-```{r}
-#lasso feature selection 
-
-set.seed(2222)
-folds = vfold_cv(ALMANAC_klaeger_CCLE_data, v = 5)
-
-this_recipe = recipe(ALMANAC_klaeger_CCLE_data) %>%
-  update_role(-starts_with("act_"),
-              -starts_with("exp_"),
-              -starts_with("viability"),
-              new_role = "id variable") %>%
-	update_role(starts_with(c("act_", "exp_")), new_role = "predictor") %>% 
-	update_role(viability, new_role = "outcome") %>%
-  step_zv(all_predictors()) %>%
-	step_normalize(all_predictors())
-
-lr_spec = linear_reg(penalty = tune(), mixture = tune()) %>%
-	set_engine("glmnet") %>% 
-	set_mode("regression")
-
-this_wflow <-
-	workflow() %>%
-	add_model(lr_spec) %>%
-	add_recipe(this_recipe)
-
-race_ctrl = control_grid(
-	save_pred = TRUE, 
-	parallel_over = "everything",
-	verbose = TRUE
-)
-
-results = tune_grid(
-	this_wflow,
-	resamples = folds,
-	grid = lr_grid,
-	control = race_ctrl
-) %>% 
-  collect_metrics() %>% 
-	write_csv(here('results/ALMANAC_klaeger_lasso_tuning_results.csv'))
-```
 
 ```{r}
-tuning_results = read_csv(here('results/ALMANAC_klaeger_lasso_tuning_results.csv')) %>% 
-	arrange(desc(mean)) %>% 
-	slice(1:10)
-lasso_feature_sets = data.frame()
-for(i in 1:dim(tuning_results)[1]) {
-
-lr_final_spec = linear_reg(penalty = tuning_results$penalty[i], mixture = tuning_results$mixture[i]) %>%
-	set_engine("glmnet") %>% 
-	set_mode("regression")
-
-this_recipe = recipe(ALMANAC_klaeger_CCLE_data) %>%
-  update_role(-starts_with("act_"),
-              -starts_with("exp_"),
-              -starts_with("viability"),
-              new_role = "id variable") %>%
-	update_role(starts_with(c("act_", "exp_")), new_role = "predictor") %>%
-	update_role(viability, new_role = "outcome") %>%
-  step_zv(all_predictors()) %>%
-	step_normalize(all_predictors())
-
-final_wflow <-
-	workflow() %>%
-	add_model(lr_final_spec) %>%
-	add_recipe(this_recipe)
-
-set.seed(2222)
-this_results = 
-	final_wflow %>% 
-	fit(this_dataset)
-
-all_importance = vi(this_results %>% extract_fit_parsnip()) %>%
-	arrange(desc(Importance)) %>%
-	filter(Importance > 0) %>%
-	mutate(rank = 1:n()) %>%
-  rename(feature = Variable) %>% 
-  mutate(feature_type = case_when(
-    str_detect(feature, "^act_") ~ "Inhibition",
-    str_detect(feature, "^exp_") ~ "Gene Expression",
-    T ~ feature
-  )) %>% 
-		mutate(lasso_rank = paste0("lasso_", i))
-	
-lasso_feature_sets = bind_rows(lasso_feature_sets, all_importance)
-}	
-
-write_csv(lasso_feature_sets, here('results/ALMANAC_klaeger_lasso_selected_features.csv'))
-```
-
-```{r}
-#build xgboost models (grid search based on features elected by lasso)
+#check if tuning lasso within xgboost is possible 
 ALMANAC_klaeger_CCLE_data = read_csv(here('results/ALMANAC_klaeger_data_for_ml.csv'))
-lasso_tuning_results = read_csv(here('results/ALMANAC_klaeger_lasso_tuning_results.csv')) %>% 
-	arrange(desc(mean)) %>% 
-	slice(1:10) %>% 
-	mutate(lasso_rank = row_number())
-#feats =  read_csv(here('results/ALMANAC_klaeger_lasso_selected_features.csv'))
 
 xgb_grid = read_rds(here('results/hyperparameter_grids/xgb_grid.rds'))
 
 set.seed(2222)
 folds = vfold_cv(ALMANAC_klaeger_CCLE_data, v = 5)
-this_lasso_rank = 1
-all_results = data.frame()
-for(this_lasso_rank in unique(lasso_tuning_results$lasso_rank)) {
+
 tic()	
 
-this_lasso_parameters = lasso_tuning_results %>% 
-	filter(lasso_rank == this_lasso_rank)
-	
-# id_vars = ALMANAC_klaeger_CCLE_data %>% 
-#   select(-starts_with(c("act_", "exp_")), viability)
-	
 this_recipe = recipe(ALMANAC_klaeger_CCLE_data) %>%
   update_role(-starts_with("act_"),
               -starts_with("exp_"),
@@ -154,7 +54,7 @@ this_recipe = recipe(ALMANAC_klaeger_CCLE_data) %>%
 	update_role(viability, new_role = "outcome") %>%
 	step_normalize(all_predictors()) %>%  
   step_zv(all_predictors()) %>% 
-	step_select_linear(all_predictors(), outcome = "viability", engine = "glmnet", penalty = this_lasso_parameters$penalty, mixture = this_lasso_parameters$mixture, top_p = 100)
+	step_select_linear(all_predictors(), outcome = "viability", engine = "glmnet", penalty = tune(), mixture = tune(), top_p = tune())
 
 xgb_spec <- boost_tree(
   trees = tune(), 
@@ -174,31 +74,105 @@ race_ctrl = control_grid(
   verbose = TRUE
 )
 
+set.seed(2222)
+recipe_grid = grid_max_entropy(
+	extract_parameter_set_dials(this_recipe) %>% 
+		update(top_p = top_p(c(5,2000))), 
+	size = 10
+)
+
+full_grid = merge(xgb_grid, recipe_grid)
+
 results <- tune_grid(
   this_wflow,
   resamples = folds,
-  grid = xgb_grid,
+  grid = full_grid,
   control = race_ctrl
 ) %>% 
-  collect_metrics() %>% 
-	mutate(lasso_rank = this_lasso_rank)
+  collect_metrics()
   
-all_results = bind_rows(all_results, results)
-
 toc()
-}
 
-write_csv(all_results, here('results/ALMANAC_klaeger_lasso_xgboost_results.csv'))
+
+write_csv(results, here('results/ALMANAC_klaeger_lasso_xgboost_all_tuning_results.csv'))
 ```
 
 ```{r}
-all_results = read_csv(here('results/ALMANAC_klaeger_lasso_xgboost_results.csv'))
-all_results %>%
- ggplot(aes(x = predicted_viability, y = viability)) +
- geom_hex() +
- scale_fill_viridis_c(guide = guide_colorbar(title = "Number of\nviability values")) +
- labs(title = 
-  paste0('R\u00B2 = ',
+# fit best model for figure
+results = read_csv(here('results/ALMANAC_klaeger_lasso_xgboost_all_tuning_results.csv'))
+
+best_model = results %>% 
+	filter(.metric == "rsq") %>% 
+	arrange(desc(mean)) %>% 
+	slice(1)
+
+ALMANAC_klaeger_CCLE_data = read_csv(here('results/ALMANAC_klaeger_data_for_ml.csv'))
+
+set.seed(2222)
+folds = vfold_cv(ALMANAC_klaeger_CCLE_data, v = 5)
+
+tic()	
+
+this_recipe = recipe(ALMANAC_klaeger_CCLE_data) %>%
+  update_role(-starts_with("act_"),
+              -starts_with("exp_"),
+              -starts_with("viability"),
+              new_role = "id variable") %>%
+	update_role(starts_with(c("act_", "exp_")), new_role = "predictor") %>% 
+	update_role(viability, new_role = "outcome") %>%
+	step_normalize(all_predictors()) %>%  
+  step_zv(all_predictors()) %>% 
+	step_select_linear(all_predictors(), outcome = "viability", engine = "glmnet", penalty = best_model$penalty, mixture = best_model$mixture, top_p = best_model$top_p)
+
+xgb_spec <- boost_tree(
+  trees = best_model$trees, 
+  tree_depth = best_model$tree_depth
+) %>% 
+  set_engine("xgboost", tree_method = "gpu_hist") %>% 
+  set_mode("regression")
+
+this_wflow <-
+  workflow() %>%
+  add_model(xgb_spec) %>%
+  add_recipe(this_recipe)
+
+race_ctrl = control_resamples(
+  save_pred = TRUE, 
+  parallel_over = "everything",
+  verbose = TRUE
+)
+
+final_results <- fit_resamples(
+  this_wflow,
+  resamples = folds,
+  control = race_ctrl
+) 
+  
+toc()
+```
+
+```{r}
+final_predictions = collect_predictions(final_results) %>% 
+	rename(predicted_viability = .pred)
+
+rsq = cor(
+	final_predictions %>% 
+		pull(predicted_viability),
+		final_predictions %>% 
+		pull(viability)
+)^2
+
+rmse = rmse(final_predictions %>% 
+		pull(predicted_viability),
+		final_predictions %>% 
+		pull(viability))
+
+final_predictions %>%
+	ggplot(aes(y = predicted_viability, x = viability)) +
+	geom_hex() +
+	scale_fill_viridis_c() +
+	labs(title = 
+			 	paste0('R\u00B2 = ',
 			 				 round(
 			 				 	rsq,
 			 				 	2),
@@ -207,314 +181,16 @@ all_results %>%
 			 				 	rmse,
 			 				 	2)
 			 	), 
-  x = "Predicted Viability",
-  y = "Actual Viability from ALMANAC") +
+			 x = "Predicted Viability",
+			 y = "Actual Viability in ALMANAC") +
 	geom_abline(intercept = 0, slope = 1, size = 0.3, colour = 'black', linetype = 3) +
-	geom_smooth(colour = "red", method = "lm") +
+	geom_smooth(colour = "red") +
 	#coord_cartesian(xlim = c(0.2,1), ylim= c(0,1)) +
 	theme(
-		legend.position = "bottom",
 		panel.background = element_rect(fill = "transparent",colour = NA),
-		panel.grid.minor = element_blank(), 
-		panel.grid.major = element_blank(),
-		plot.background = element_rect(fill = "transparent",colour = NA)
-	)
-```
-
-```{r}
-#build xgboost models (grid search based on increasing feature numbers selected by lasso)
-ALMANAC_klaeger_CCLE_data = read_csv(here('results/ALMANAC_klaeger_data_for_ml.csv'))
-lasso_tuning_results = read_csv(here('results/ALMANAC_klaeger_lasso_tuning_results.csv')) %>% 
-	arrange(desc(mean)) %>% 
-	slice(1:10) %>% 
-	mutate(lasso_rank = row_number()) %>% 
-	filter(lasso_rank == 7)
-
-xgb_grid = read_rds(here('results/hyperparameter_grids/xgb_grid.rds'))
-
-set.seed(2222)
-folds = vfold_cv(ALMANAC_klaeger_CCLE_data, v = 5)
-all_results = data.frame()
-for(feature_number in c(10,50,100,200,300,400,500,1000,2000,3000)) {
-tic()	
-
-this_lasso_parameters = lasso_tuning_results
-	
-this_recipe = recipe(ALMANAC_klaeger_CCLE_data) %>%
-  update_role(-starts_with("act_"),
-              -starts_with("exp_"),
-              -starts_with("viability"),
-              new_role = "id variable") %>%
-	update_role(starts_with(c("act_", "exp_")), new_role = "predictor") %>% 
-	update_role(viability, new_role = "outcome") %>%
-	step_normalize(all_predictors()) %>%  
-  step_zv(all_predictors()) %>% 
-	step_select_linear(all_predictors(), outcome = "viability", engine = "glmnet", penalty = this_lasso_parameters$penalty, mixture = this_lasso_parameters$mixture, top_p = feature_number)
-
-xgb_spec <- boost_tree(
-  trees = tune(), 
-  tree_depth = tune()
-) %>% 
-  set_engine("xgboost", tree_method = "gpu_hist") %>% 
-  set_mode("regression")
-
-this_wflow <-
-  workflow() %>%
-  add_model(xgb_spec) %>%
-  add_recipe(this_recipe)
-
-race_ctrl = control_grid(
-  save_pred = TRUE, 
-  parallel_over = "everything",
-  verbose = TRUE
-)
-
-results <- tune_grid(
-  this_wflow,
-  resamples = folds,
-  grid = xgb_grid,
-  control = race_ctrl
-) %>% 
-  collect_metrics() %>% 
-	mutate(feature_num = feature_number)
-  
-all_results = bind_rows(all_results, results)
-
-toc()
-}
-
-write_csv(all_results, here('results/ALMANAC_klaeger_lasso_xgboost_full_results.csv'))
-```
-
-
-```{r}
-#run final tuned model in CV for figure
-xgboost_tuning_results = read_csv(here('results/ALMANAC_klaeger_lasso_xgboost_results.csv'))
-ALMANAC_klaeger_CCLE_data = read_csv(here('results/ALMANAC_klaeger_data_for_ml.csv'))
-feats =  read_csv(here('results/ALMANAC_klaeger_lasso_selected_features.csv'))
-
-set.seed(2222)
-folds = vfold_cv(ALMANAC_klaeger_CCLE_data, v = 5)
-
-tic()	
-
-this_feats = feats %>% 
-	filter(lasso_rank == "lasso_1")
-	
-id_vars = ALMANAC_klaeger_CCLE_data %>% 
-  select(-starts_with(c("act_", "exp_")), viability)
-	
-this_recipe = recipe(ALMANAC_klaeger_CCLE_data) %>%
-  update_role(-starts_with("act_"),
-              -starts_with("exp_"),
-              -starts_with("viability"),
-              new_role = "id variable") %>%
-	update_role(starts_with(c("act_", "exp_")), new_role = "predictor") %>% 
-	update_role(viability, new_role = "outcome") %>%
-	step_select(any_of(c(names(id_vars), this_feats$feature))) %>% 
-  step_zv(all_predictors())
-
-xgb_spec <- boost_tree(
-  trees = tune(), 
-  tree_depth = tune()
-) %>% 
-  set_engine("xgboost", tree_method = "gpu_hist") %>% 
-  set_mode("regression")
-
-this_wflow <-
-  workflow() %>%
-  add_model(xgb_spec) %>%
-  add_recipe(this_recipe)
-
-race_ctrl = control_grid(
-  save_pred = TRUE, 
-  parallel_over = "everything",
-  verbose = TRUE
-)
-
-results <- tune_grid(
-  this_wflow,
-  resamples = folds,
-  grid = xgb_grid,
-  control = race_ctrl
-) %>% 
-  collect_metrics() %>% 
-	mutate(lasso_rank = lasso_rank)
-  
-all_results = bind_rows(all_results, results)
-
-toc()
-
-write_csv(all_results, here('results/ALMANAC_klaeger_lasso_xgboost_results.csv'))
-```
-
-```{r}
-#build classification model 10-fold CV
-
-data_1000 = final_model_data %>% 
-	select(any_of(feature_correlations$feature[1:1000]),
-					 CELLNAME, DepMap_ID, drug1, drug2, viability
-					 ) %>% 
-	mutate(viability_binary = as.factor(if_else(
-		viability > median(viability),
-		0,
-		1
-	))) %>% 
-	select(-viability)
-
-folds = vfold_cv(data_1000, v = 10)
-
-feat1000_recipe = recipe(viability_binary ~ ., data_1000) %>%
-	update_role(-starts_with(c("act_", "exp_", "viability" )),
-							new_role = "id variable")
-
-rand_forest_spec <- rand_forest(
-	trees = 500
-) %>% set_engine("ranger") %>%
-	set_mode("classification")
-
-feat1000_wflow <- 
-  workflow() %>% 
-  add_model(rand_forest_spec) %>% 
-  add_recipe(feat1000_recipe)
-
-ctrl <- control_resamples(save_pred = TRUE)
-
-fit <- 
-  feat1000_wflow %>% 
-  fit_resamples(folds, control = ctrl)
-
-
-cv_metrics = collect_metrics(fit)
-
-predictions = collect_predictions(fit)
-
-
-roc_cruve = predictions %>%
-	roc_curve(truth = viability_binary, .pred_0) %>%
-	autoplot() +
-	ggtitle(round(cv_metrics$mean[2], 4))
-
-
-pr_cruve = predictions %>%
-	pr_curve(truth = viability_binary, .pred_0) %>%
-	autoplot() +
-	ggtitle(round(cv_metrics$mean[1], 4))
-
-c = roc_cruve + pr_cruve + plot_annotation(title = '10-fold CV ALMANAC Classification Model Results',
-																					 subtitle = 'Classify Viability Below Median')
-
-ggsave(here('figures/ALMANAC_classification_model_results.png'))
-```
-
-```{r}
-#build regression model 10-fold CV
-
-data_1000_continuous = final_model_data %>% 
-	select(any_of(feature_correlations$feature[1:1000]),
-					 CELLNAME, DepMap_ID, drug1, drug2, viability
-					 )
-
-folds = vfold_cv(data_1000_continuous, v = 10)
-
-feat1000_recipe = recipe(viability ~ ., data_1000_continuous) %>%
-	update_role(-starts_with(c("act_", "exp_", "viability" )),
-							new_role = "id variable")
-
-rand_forest_spec <- rand_forest(
-	trees = 500
-) %>% set_engine("ranger") %>%
-	set_mode("regression")
-
-feat1000_wflow <- 
-  workflow() %>% 
-  add_model(rand_forest_spec) %>% 
-  add_recipe(feat1000_recipe)
-
-ctrl <- control_resamples(save_pred = TRUE)
-
-reg_fit <- 
-  feat1000_wflow %>% 
-  fit_resamples(folds, control = ctrl)
-
-cv_metrics_regression = collect_metrics(reg_fit)
-
-predictions_regression = collect_predictions(reg_fit) %>% 
-	rename('predicted_viability' = .pred)
-
-predictions_regression %>% 
-	ggplot(aes(x = viability, y = predicted_viability)) +
-	geom_hex() +
-	scale_fill_gradient(low="lightblue1",high="darkblue",trans="log10") +
-	geom_smooth() +
-	labs(title = paste0('Correlation = ', 
-											round(
-												cor(predictions_regression$viability, 
-														predictions_regression$predicted_viability),
-												4),
-											', R-Squared = ', round(
-												cv_metrics_regression$mean[2],
-												4),
-											', RMSE = ', round(cv_metrics_regression$mean[1],
-																				 4))) + 
-	geom_abline(intercept = 0, slope = 1, size = 0.5, colour = 'red') +
-	xlim(0,1.1) +
-	ylim(0,1.1)
-
-
-ggsave(here('figures/ALMANAC_regression_model_results.png'))
-```
-
-```{python}
-
-```
-
-
-
-```{python}
-import pandas 
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.model_selection import RandomizedSearchCV
-from sklearn.feature_selection import VarianceThreshold
-from sklearn.feature_selection import SelectFromModel
-from sklearn.linear_model import ElasticNet
-
-#preprocessing
-var=VarianceThreshold(threshold=0.0)
-var.fit(X)
-cols = var.get_support(indices=True)
-X_var_selected=X.iloc[:,cols]
-
-scaler = MinMaxScaler()
-
-X_normalized = pandas.DataFrame(scaler.fit_transform(X_var_selected), columns = X_var_selected.columns)
-```
-
-```{python}
-lr_penalties = lr_grid["penalty"].to_list()
-lr_mixtures = lr_grid["mixture"].to_list()
-
-clf_lr = ElasticNet(alpha=1, max_iter=9999, random_state = 0, l1_ratio = 1)
-param_dist = {'alpha': lr_penalties,
-							'l1_ratio' : lr_mixtures
-             }
-
-clf = RandomizedSearchCV(clf_lr,
-                         param_dist,
-                         n_iter = 50,
-                         cv = 3,
-                         scoring = 'r2',
-                         n_jobs = -1,
-                         verbose = 3)
-                         
-clf.fit(X_normalized, y)
-results = pd.DataFrame(clf.cv_results_)
-results.sort_values(by='rank_test_score').to_csv('results/ALMANAC_klaeger_lasso_tuning_results.csv')
-
-
-
-# lasso = LogisticRegression(penalty='l1', C=1000, solver='liblinear', max_iter=9000)
-# lasso.fit(X_train, y_train)
-# model = SelectFromModel(lasso, prefit=True, max_features=feature_count)
-# cols = model.get_support(indices=True)
+    panel.grid.minor = element_blank(), 
+    panel.grid.major = element_blank(),
+    plot.background = element_rect(fill = "transparent",colour = NA)
+      )
+ggsave(here('figures/misc/ALMANAC_klaeger_best_model_CV.png'))
 ```
